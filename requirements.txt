@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+python-dotenv
+openai
+pandas
+requests
+pydantic
+geopy
+polyline
+python-multipart
+streamlit
+streamlit-folium
+plotly
+folium
