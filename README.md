@@ -23,13 +23,16 @@ This project is an AI-driven Supply Chain Management system that integrates a **
 ---
 
 ## ⚙️ Setup & Installation
-
+---
  1. Clone the Repository
 ```bash
 git clone [https://github.com/yash-dhoble19/supply-chain-management.git](https://github.com/yash-dhoble19/supply-chain-management.git)
 cd supply-chain-management
-2. Set up a Virtual Environment
-Bash
+'''
+
+---
+ ## 2. Set up a Virtual Environment
+
 
 # Windows
 python -m venv venv
