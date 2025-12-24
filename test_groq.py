@@ -1,11 +1,13 @@
 from openai import OpenAI
 import os
+import os
+from dotenv import load_dotenv
 
 # --- CONFIGURATION ---
 # TODO: Paste your actual Groq API Key here
 # Get it from: https://console.groq.com/keys
-GROQ_API_KEY = "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"
-
+load_dotenv() 
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 print("------------------------------------------------")
 print("🚀 TESTING GROQ CONNECTION")
 print("------------------------------------------------")

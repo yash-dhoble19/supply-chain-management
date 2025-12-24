@@ -8,14 +8,18 @@ import models, database
 import pandas as pd
 import io
 import json
+import os
+from dotenv import load_dotenv
 
+load_dotenv() # Load the .env file
 # --- LOGISTICS IMPORTS (FREE OPEN SOURCE) ---
 from geopy.geocoders import Nominatim
 import requests
 import polyline
 
 # --- CONFIGURATION ---
-GROQ_API_KEY = "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"
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # Initialize AI
 client = OpenAI(
