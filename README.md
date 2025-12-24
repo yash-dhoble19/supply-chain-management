@@ -28,10 +28,7 @@ This project is an AI-driven Supply Chain Management system that integrates a **
 ```bash
 git clone [https://github.com/yash-dhoble19/supply-chain-management.git](https://github.com/yash-dhoble19/supply-chain-management.git)
 cd supply-chain-management
-
-
-
-
+```bash
 
 
 python -m venv venv
