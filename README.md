@@ -23,58 +23,45 @@ This project is an AI-driven Supply Chain Management system that integrates a **
 ---
 
 ## ⚙️ Setup & Installation
----
- 1. Clone the Repository
+
+### 1. Clone the Repository
 ```bash
 git clone [https://github.com/yash-dhoble19/supply-chain-management.git](https://github.com/yash-dhoble19/supply-chain-management.git)
 cd supply-chain-management
-'''
-
----
- ## 2. Set up a Virtual Environment
 
 
-# Windows
+
+
+
+
 python -m venv venv
 venv\Scripts\activate
 
-# Mac/Linux
-python3 -m venv venv
-source venv/bin/activate
-3. Install Dependencies
-Bash
+
+
 
 pip install -r requirements.txt
-4. Configure Environment Variables
-Create a file named .env in the root directory (do not commit this file!) and add your keys:
 
-Properties
 
-# Your Groq API Key for AI Agents
-GROQ_API_KEY=your_groq_api_key_here
+# .env file
 
-# Your PostgreSQL Connection String
+# Your Groq API Key (Get one from console.groq.com)
+GROQ_API_KEY=your_actual_groq_api_key_here
+
+# Your Database Connection String
 # Format: postgresql://username:password@localhost/database_name
-DATABASE_URL=postgresql://postgres:password@localhost/supply_chain_db
-Note: Ensure you have a local PostgreSQL database created named supply_chain_db.
+DATABASE_URL=postgresql://postgres:your_password@localhost/supply_chain_db
 
-🏃‍♂️ How to Run
-You need to run the Backend and Frontend in two separate terminal windows.
 
-Terminal 1: Start the Backend (API)
-This handles the logic, database connections, and AI requests.
 
-Bash
 
 uvicorn main:app --reload
-The API will start at http://127.0.0.1:8000
-
-Terminal 2: Start the Frontend (Dashboard)
-This launches the user interface.
-
-Bash
-
 streamlit run app.py
-The dashboard will open automatically in your browser at http://localhost:8501
 
+### Final Step
+After you save this file, run these commands to update GitHub:
 
+```bash
+git add README.md
+git commit -m "Update README with full documentation"
+git push origin main
