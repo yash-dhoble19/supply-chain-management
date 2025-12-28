@@ -7,8 +7,7 @@ import io
 import folium
 from streamlit_folium import st_folium
 import polyline
-from datetime import datetime, timedelta  # For Date/Time Math
-
+from datetime import datetime, timedelta
 
 # --- CONFIGURATION ---
 API_URL = "http://127.0.0.1:8000"
@@ -32,7 +31,7 @@ st.markdown("""
         box-shadow: 0 2px 5px rgba(0,0,0,0.02);
     }
     
-    /* AI Insight Box (Blue) */
+    /* AI Insight Box */
     .insight-box {
         background-color: #e8f4fd; border-left: 4px solid #2196f3;
         padding: 20px; border-radius: 8px; margin-bottom: 20px;
@@ -43,17 +42,18 @@ st.markdown("""
     /* Seasonal Bars */
     .season-bar-bg { background-color: #eee; height: 8px; border-radius: 4px; width: 100%; margin-top: 5px; }
     .season-bar-fill { height: 8px; border-radius: 4px; background: linear-gradient(90deg, #aa00ff, #e040fb); }
-    
 </style>
 """, unsafe_allow_html=True)
 
 # --- SIDEBAR ---
 st.sidebar.title("🏭 Expedition Co.")
-page = st.sidebar.radio("Navigate", ["Dashboard", "Demand Forecasting", "Procurement Agent", "Logistics Risk"])
+page = st.sidebar.radio("Navigate", ["Dashboard", "Inventory Management", "Demand Forecasting", "Procurement Agent", "Logistics Risk"])
 st.sidebar.markdown("---")
 st.sidebar.caption("System Status: 🟢 Online")
 
-# --- PAGE 1: DASHBOARD ---
+# ==========================================
+# PAGE 1: DASHBOARD OVERVIEW
+# ==========================================
 if page == "Dashboard":
     st.title("📊 Control Tower Overview")
     
@@ -64,14 +64,14 @@ if page == "Dashboard":
         ord_res = requests.get(f"{API_URL}/orders/")
         if ord_res.status_code == 200: orders_data = ord_res.json()
     except:
-        st.error("⚠️ Backend Offline. Please restart 'main.py'.")
+        st.error("⚠️ Backend Offline. Please run 'python -m uvicorn main:app --reload'")
 
     c1, c2, c3, c4 = st.columns(4)
     crit_stock = len([x for x in inventory_data if x.get('status') == 'CRITICAL'])
     
     c1.metric("📦 Total SKUs", len(inventory_data))
     c2.metric("🚨 Critical Stock", crit_stock, delta="-Alert", delta_color="inverse")
-    c3.metric("⚠️ High Risk Orders", 2, delta="-Review", delta_color="inverse") # Dummy for now
+    c3.metric("⚠️ High Risk Orders", 2, delta="-Review", delta_color="inverse") 
     c4.metric("🚛 Active POs", 1) 
 
     c_left, c_right = st.columns([2, 1])
@@ -90,30 +90,159 @@ if page == "Dashboard":
         st.subheader("Recent Activity")
         if orders_data:
             df_ord = pd.DataFrame(orders_data)
-            st.dataframe(df_ord[['customer_name', 'status']], hide_index=True)
+            if not df_ord.empty:
+                st.dataframe(df_ord[['customer_name', 'status']], hide_index=True)
+            else:
+                st.info("No recent orders.")
 
-# --- PAGE 2: DEMAND FORECASTING (UNIVERSAL EDITION) ---
+# ==========================================
+# PAGE 2: INVENTORY MANAGEMENT
+# ==========================================
+elif page == "Inventory Management":
+    st.title("📦 Inventory Control Tower")
+    
+    # 1. FETCH DATA
+    df = pd.DataFrame()
+    try:
+        res = requests.get(f"{API_URL}/inventory/analysis")
+        if res.status_code == 200:
+            data = res.json()
+            if data:
+                df = pd.DataFrame(data)
+                df = df.rename(columns={
+                    "product": "Product", "sku": "SKU", "on_hand": "Stock", 
+                    "stage": "Stage", "category": "Category", "unit_price": "Price",
+                    "optimal_stock": "Optimal"
+                })
+    except:
+        st.error("Cannot connect to Database.")
+
+    if not df.empty:
+        # 2. KPIs
+        total_value = (df['Stock'] * df['Price']).sum()
+        critical_count = len(df[df['status'] == 'CRITICAL'])
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Items", len(df))
+        c2.metric("Total Value", f"${total_value:,.0f}")
+        c3.metric("Critical Items", critical_count)
+
+        # 3. CHARTS
+        st.subheader("Inventory Distribution")
+        col_charts, col_actions = st.columns([2, 1])
+        
+        with col_charts:
+            c_pie, c_bar = st.columns(2)
+            with c_pie:
+                if 'Category' in df.columns:
+                    fig_pie = px.pie(df, names='Category', values='Stock', hole=0.4, title="By Category")
+                    fig_pie.update_layout(height=250, margin=dict(t=30, b=0, l=0, r=0), showlegend=False)
+                    st.plotly_chart(fig_pie, use_container_width=True)
+            with c_bar:
+                if 'Stage' in df.columns:
+                    fig_bar = px.bar(df, x='Category', y='Stock', color='Stage', title="By Stage")
+                    fig_bar.update_layout(height=250, margin=dict(t=30, b=0, l=0, r=0))
+                    st.plotly_chart(fig_bar, use_container_width=True)
+
+        with col_actions:
+             st.subheader("Quick Actions")
+             st.info(f"💡 AI Suggestion: You have {critical_count} critical items.")
+             
+             # DIALOG FUNCTIONS
+             @st.dialog("Add Product")
+             def add_form():
+                with st.form("add"):
+                    sku = st.text_input("SKU")
+                    name = st.text_input("Name")
+                    cat = st.selectbox("Category", ["Raw Material", "Electronics", "Food"])
+                    stage = st.selectbox("Stage", ["Raw Material", "WIP", "Finished"])
+                    stock = st.number_input("Stock", value=100)
+                    price = st.number_input("Price", value=10.0)
+                    if st.form_submit_button("Save"):
+                        requests.post(f"{API_URL}/products/", json={
+                            "sku": sku, "name": name, "category": cat, "stage": stage,
+                            "current_stock": stock, "unit_price": price, 
+                            "safety_stock_level": 10, "optimal_stock_level": 50
+                        })
+                        st.rerun()
+
+             @st.dialog("Edit Product")
+             def edit_form():
+                opts = {f"{row['SKU']} - {row['Product']}": row['id'] for i, row in df.iterrows()}
+                sel = st.selectbox("Select Product", list(opts.keys()))
+                prod_id = opts[sel]
+                curr = df[df['id'] == prod_id].iloc[0]
+                with st.form("edit"):
+                    new_stage = st.selectbox("Stage", ["Raw Material", "WIP", "Finished"], index=["Raw Material", "WIP", "Finished"].index(curr['Stage']) if curr['Stage'] in ["Raw Material", "WIP", "Finished"] else 0)
+                    new_stock = st.number_input("Stock", value=int(curr['Stock']))
+                    new_price = st.number_input("Price", value=float(curr['Price']))
+                    if st.form_submit_button("Update"):
+                        requests.put(f"{API_URL}/products/{prod_id}", json={"stage": new_stage, "current_stock": new_stock, "unit_price": new_price})
+                        st.rerun()
+
+             @st.dialog("Log Stock")
+             def log_form():
+                opts = {f"{row['SKU']} - {row['Product']}": row['id'] for i, row in df.iterrows()}
+                sel = st.selectbox("Select Product", list(opts.keys()))
+                prod_id = opts[sel]
+                with st.form("log"):
+                    qty = st.number_input("Quantity (+/-)", step=1, value=10)
+                    reason = st.text_input("Reason", "Restock")
+                    if st.form_submit_button("Submit"):
+                        requests.post(f"{API_URL}/inventory/logs", json={"product_id": prod_id, "quantity_change": qty, "reason": reason})
+                        st.rerun()
+
+             @st.dialog("Delete")
+             def delete_form():
+                opts = {f"{row['SKU']} - {row['Product']}": row['id'] for i, row in df.iterrows()}
+                sel = st.selectbox("Select Product", list(opts.keys()))
+                if st.button("Confirm Delete", type="primary"):
+                    requests.delete(f"{API_URL}/products/{opts[sel]}")
+                    st.rerun()
+
+             # ACTION BUTTONS GRID
+             c_a, c_b = st.columns(2)
+             if c_a.button("➕ Add", use_container_width=True): add_form()
+             if c_b.button("✏️ Edit", use_container_width=True): edit_form()
+             c_c, c_d = st.columns(2)
+             if c_c.button("🔄 Log", use_container_width=True): log_form()
+             if c_d.button("🗑️ Delete", use_container_width=True): delete_form()
+
+        # 4. MAIN TABLE
+        st.subheader("Current Inventory Status")
+        df['Stock_Pct'] = df['Stock'] / df['Optimal'].replace(0, 1)
+        st.dataframe(
+            df,
+            column_order=("SKU", "Product", "Category", "Stage", "Stock", "Stock_Pct", "status", "Price"),
+            column_config={
+                "Stock": st.column_config.NumberColumn("Current Stock"),
+                "Stage": st.column_config.TextColumn("Stage"),
+                "Stock_Pct": st.column_config.ProgressColumn("Stock Level", format="%.0f%%", min_value=0, max_value=1.5),
+                "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
+                "status": st.column_config.TextColumn("Status"),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+    else:
+        st.info("No products found.")
+
+# ==========================================
+# PAGE 3: DEMAND FORECASTING (FIXED ERROR)
+# ==========================================
 elif page == "Demand Forecasting":
     st.title("📈 AI Demand Forecasting")
-    st.caption("Machine learning-powered demand predictions with market context.")
+    st.caption("Machine learning-powered demand predictions.")
 
-    # 1. AI INSIGHT
     if 'forecast_result' in st.session_state:
         res = st.session_state['forecast_result']
         insight = res.get('ai_insight', 'AI analysis pending...')
-        st.markdown(f"""
-        <div class="insight-box">
-            <div class="insight-title">✨ AI-Powered Insight</div>
-            <div class="insight-text">{insight}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="insight-box"><div class="insight-title">✨ AI-Powered Insight</div><div class="insight-text">{insight}</div></div>""", unsafe_allow_html=True)
 
-    # 2. MAIN LAYOUT
     col_chart, col_season = st.columns([2, 1])
 
     with col_chart:
-        st.subheader("12-Month Demand Forecast")
-        
+        st.subheader("Forecast Upload")
         uploaded_file = st.file_uploader("Upload Sales Data (CSV)", type="csv")
         
         if uploaded_file:
@@ -121,96 +250,57 @@ elif page == "Demand Forecasting":
             df = pd.read_csv(uploaded_file)
             cols = df.columns.tolist()
             
-            # --- 🛠️ DYNAMIC MAPPING SECTION ---
-            with st.expander("⚙️ Column Mapping (Configure your file)", expanded=True):
-                st.info("Please confirm which columns match our data points.")
+            with st.expander("⚙️ Column Mapping", expanded=True):
                 c1, c2, c3 = st.columns(3)
-                
-                # Auto-guess defaults to save time
                 def find_col(keywords, columns):
                     for col in columns:
                         if any(k in col.lower() for k in keywords): return col
                     return columns[0]
-
+                
                 default_date = find_col(['date', 'time', 'period'], cols)
                 default_cat = find_col(['cat', 'prod', 'type', 'sku', 'item'], cols)
                 default_val = find_col(['price', 'rev', 'amount', 'total', 'sales'], cols)
 
-                # The User Selects the actual columns
                 date_col = c1.selectbox("Date Column", cols, index=cols.index(default_date) if default_date in cols else 0)
                 cat_col = c2.selectbox("Category/Product Column", cols, index=cols.index(default_cat) if default_cat in cols else 0)
                 val_col = c3.selectbox("Revenue/Price Column", cols, index=cols.index(default_val) if default_val in cols else 0)
-            
-            # Get categories from the USER SELECTED column
-            unique_cats = df[cat_col].unique().tolist()
+                
+            unique_cats = df[cat_col].unique().tolist() if not df.empty else []
             sel_cat = st.selectbox("Select Product to Forecast", unique_cats)
             
-            # GENERATE BUTTON
-            if st.button("🚀 Generate New Forecast", type="primary"):
+            if st.button("🚀 Generate Forecast", type="primary"):
                 with st.spinner(f"Standardizing data for '{sel_cat}' & Forecasting..."):
-                    
-                    # 1. STANDARDIZE THE DATAFRAME LOCALLY
-                    # We rename the user's messy columns to the clean names the Backend expects
-                    clean_df = df.rename(columns={
-                        date_col: 'Date',
-                        cat_col: 'Category',
-                        val_col: 'Total_Revenue' 
-                    })
-                    
-                    # Convert to CSV buffer to send to backend
+                    clean_df = df.rename(columns={date_col: 'Date', cat_col: 'Category', val_col: 'Total_Revenue'})
                     buffer = io.StringIO()
                     clean_df.to_csv(buffer, index=False)
                     buffer.seek(0)
-                    
-                    # Send the CLEANED file
                     files = {"file": buffer.getvalue()}
                     data = {"category": sel_cat}
-                    
                     try:
                         api_res = requests.post(f"{API_URL}/forecast/upload", files=files, data=data)
                         if api_res.status_code == 200:
                             st.session_state['forecast_result'] = api_res.json()
                             st.rerun()
-                        else:
-                            st.error(f"Server Error: {api_res.text}")
-                    except Exception as e:
-                        st.error(f"Connection Error: {e}")
+                        else: st.error(api_res.text)
+                    except Exception as e: st.error(f"Connection Error: {e}")
 
-        # CHART RENDERER
         if 'forecast_result' in st.session_state:
             res = st.session_state['forecast_result']
             if 'chart_data' in res:
                 df = pd.DataFrame(res['chart_data'])
                 fig = go.Figure()
-                
                 hist = df[df['Type'] == 'Historical']
-                fig.add_trace(go.Scatter(x=hist['Date'], y=hist['Sales'], mode='lines', 
-                                       name='History', line=dict(color='#00C853', width=3)))
-                
+                fig.add_trace(go.Scatter(x=hist['Date'], y=hist['Sales'], mode='lines', name='History', line=dict(color='#00C853', width=3)))
                 fore = df[df['Type'] == 'Forecast']
-                fig.add_trace(go.Scatter(x=fore['Date'], y=fore['Sales'], mode='lines+markers', 
-                                       name='AI Prediction', line=dict(color='#2962FF', width=3, dash='dot')))
-
-                fig.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
-                                  xaxis_title="Date", yaxis_title="Revenue ($)", hovermode="x unified")
+                fig.add_trace(go.Scatter(x=fore['Date'], y=fore['Sales'], mode='lines+markers', name='AI Prediction', line=dict(color='#2962FF', width=3, dash='dot')))
+                fig.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Date", yaxis_title="Revenue ($)", hovermode="x unified")
                 st.plotly_chart(fig, use_container_width=True)
 
     with col_season:
         st.subheader("Seasonal Trends")
-        st.markdown("**Identified patterns**")
-        
-        # (Static Visuals for Demo)
-        st.write("")
         st.markdown("**🎄 Holiday Season (Nov-Dec)**")
         st.markdown("""<div class="season-bar-bg"><div class="season-bar-fill" style="width: 94%;"></div></div>""", unsafe_allow_html=True)
-        st.caption("Impact: Very High")
-        
-        st.write("")
-        st.markdown("**📱 Tech Launch (Sep-Oct)**")
-        st.markdown("""<div class="season-bar-bg"><div class="season-bar-fill" style="width: 70%;"></div></div>""", unsafe_allow_html=True)
-        st.caption("Impact: High")
 
-    # 3. EXTERNAL FACTORS
     st.divider()
     st.subheader("External Factor Analysis")
     if 'forecast_result' in st.session_state:
@@ -220,122 +310,59 @@ elif page == "Demand Forecasting":
             cols = st.columns(3)
             for i, f in enumerate(factors):
                 with cols[i % 3]:
-                    st.metric(f.get('name'), f"{f.get('score', 50)}/100", f.get('impact', 'Neutral'))
+                    # --- FIX FOR ATTRIBUTE ERROR ---
+                    if isinstance(f, dict):
+                        st.metric(f.get('name', 'Factor'), f"{f.get('score', 50)}/100", f.get('impact', 'Neutral'))
+                    else:
+                        st.info(f"• {str(f)}") # Fallback for simple string factors
 
-# --- PAGE 3: PROCUREMENT ---
+# ==========================================
+# PAGE 4: PROCUREMENT
+# ==========================================
 elif page == "Procurement Agent":
     st.title("🤝 AI Negotiator")
     col1, col2 = st.columns([1, 2])
     with col1:
-        st.markdown("### Request Settings")
         material = st.text_input("Material", "Gore-Tex Fabric")
         qty = st.number_input("Qty", 500)
-        days = st.number_input("Deadline (Days)", 5)
-        
-        if st.button("🚀 Run AI Analysis", type="primary"):
-            with st.spinner("Analyzing Suppliers..."):
-                payload = {"material_name": material, "quantity": qty, "max_days_allowed": days}
+        days = st.number_input("Deadline", 5)
+        if st.button("🚀 Run AI Analysis"):
+            with st.spinner("Analyzing..."):
                 try:
-                    res = requests.post(f"{API_URL}/procurement/compare/", json=payload)
-                    st.session_state['procurement_result'] = res.json().get('ai_recommendation', 'No recommendation found.')
-                except Exception as e:
-                    st.error(f"Connection Failed: {e}")
-
+                    res = requests.post(f"{API_URL}/procurement/compare/", json={"material_name": material, "quantity": qty, "max_days_allowed": days})
+                    st.session_state['procurement_result'] = res.json().get('ai_recommendation')
+                except: st.error("Connection Failed")
     with col2:
-        st.markdown("### AI Recommendation")
         if 'procurement_result' in st.session_state:
             st.info(st.session_state['procurement_result'])
-        else:
-            st.write("👈 Set parameters and click Run.")
 
-# --- PAGE 4: LOGISTICS RISK ---
+# ==========================================
+# PAGE 5: LOGISTICS
+# ==========================================
 elif page == "Logistics Risk":
     st.title("🚛 Logistics Control Tower")
-    st.caption("Route Optimization & Geopolitical Risk Analysis")
-
-    # Layout: Map on Top, Inputs/Stats below
     col_map, col_controls = st.columns([2, 1])
 
     with col_controls:
-        st.subheader("📍 Route Planner")
-        
-        # Default Warehouse Location
-        start_addr = st.text_input("Origin (Warehouse)", "Mumbai, India")
-        end_addr = st.text_input("Destination (Customer)", "Kathmandu, Nepal")
-        
-        plan_btn = st.button("🗺️ Optimize Route", type="primary")
-        
-        if plan_btn:
-            with st.spinner("Calculating optimal path & analyzing risks..."):
-                payload = {"start_address": start_addr, "end_address": end_addr}
+        start = st.text_input("Origin", "Mumbai, India")
+        end = st.text_input("Destination", "Kathmandu, Nepal")
+        if st.button("🗺️ Optimize Route"):
+            with st.spinner("Calculating..."):
                 try:
-                    res = requests.post(f"{API_URL}/logistics/plan_route", json=payload)
-                    if res.status_code == 200:
-                        st.session_state['route_data'] = res.json()
-                    else:
-                        st.error(f"Error: {res.text}")
-                except Exception as e:
-                    st.error(f"Connection Error: {e}")
-
-        # SHOW STATS IF DATA EXISTS
+                    res = requests.post(f"{API_URL}/logistics/plan_route", json={"start_address": start, "end_address": end})
+                    if res.status_code == 200: st.session_state['route_data'] = res.json()
+                except: st.error("Connection Error")
+        
         if 'route_data' in st.session_state:
-            data = st.session_state['route_data']
-            route = data['route_info']
-            
-            st.divider()
-            st.markdown("### 📊 Trip Metrics")
-            c1, c2, c3 = st.columns(3) # Use 3 columns for better layout
-            
-            # 1. Distance
-            c1.metric("Distance", f"{route['distance_km']} km")
-            
-            # 2. Duration (Formatted nicely)
-            total_mins = int(route['duration_min'])
-            hours = total_mins // 60
-            minutes = total_mins % 60
-            
-            if hours > 0:
-                time_fmt = f"{hours}h {minutes}m"
-            else:
-                time_fmt = f"{minutes}m"
-                
-            c2.metric("Duration", time_fmt)
-            
-            # 3. Estimated Arrival (Date + Time)
-            # Assuming the trip starts 'Now'
-            arrival_dt = datetime.now() + timedelta(minutes=total_mins)
-            arrival_str = arrival_dt.strftime("%d %b %I:%M %p") # e.g. 21 Dec 04:30 PM
-            
-            c3.metric("Est. Arrival", arrival_str)
-            
-            st.markdown("### 🛡️ AI Risk Assessment")
-            st.info(data['risk_analysis'])
+            d = st.session_state['route_data']
+            st.metric("Distance", f"{d['route_info']['distance_km']} km")
+            st.info(d['risk_analysis'])
 
     with col_map:
-        # MAP RENDERING LOGIC
         if 'route_data' in st.session_state:
-            data = st.session_state['route_data']
-            start = data['start_coords']
-            end = data['end_coords']
-            geom = data['route_info']['geometry']
-            
-            # Create Map centered between points
-            mid_lat = (start[0] + end[0]) / 2
-            mid_lon = (start[1] + end[1]) / 2
-            m = folium.Map(location=[mid_lat, mid_lon], zoom_start=6)
-
-            # 1. Add Route Line
-            # Decode Google's polyline
-            route_coords = polyline.decode(geom)
-            folium.PolyLine(route_coords, color="blue", weight=5, opacity=0.7).add_to(m)
-
-            # 2. Add Markers
-            folium.Marker(start, popup="Warehouse", icon=folium.Icon(color="green", icon="warehouse", prefix="fa")).add_to(m)
-            folium.Marker(end, popup="Destination", icon=folium.Icon(color="red", icon="flag")).add_to(m)
-
+            d = st.session_state['route_data']
+            m = folium.Map(location=[20, 78], zoom_start=5)
+            folium.PolyLine(polyline.decode(d['route_info']['geometry']), color="blue").add_to(m)
+            st_folium(m, width="100%", height=500)
         else:
-            # Default empty map
-            m = folium.Map(location=[20.5937, 78.9629], zoom_start=5) # Center of India
-
-        # Render map in Streamlit
-        st_folium(m, width="100%", height=500)
+            st_folium(folium.Map(location=[20, 78], zoom_start=5), width="100%", height=500)
