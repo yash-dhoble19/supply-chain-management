@@ -8,6 +8,7 @@ import folium
 from streamlit_folium import st_folium
 import polyline
 from datetime import datetime, timedelta
+from streamlit_mic_recorder import speech_to_text 
 
 # --- CONFIGURATION ---
 API_URL = "http://127.0.0.1:8000"
@@ -17,29 +18,21 @@ st.set_page_config(page_title="Expedition Co. Control Tower", layout="wide", pag
 st.markdown("""
 <style>
     .stApp { background-color: #f4f6f9; }
-    
-    /* Card Container */
     .css-1r6slb0, .css-1wivap2 {
         background-color: white; border-radius: 12px; 
         padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);
     }
-    
-    /* Metric Cards */
     div[data-testid="stMetric"] {
         background-color: white; border: 1px solid #eef2f6; 
         padding: 15px; border-radius: 10px; text-align: center;
         box-shadow: 0 2px 5px rgba(0,0,0,0.02);
     }
-    
-    /* AI Insight Box */
     .insight-box {
         background-color: #e8f4fd; border-left: 4px solid #2196f3;
         padding: 20px; border-radius: 8px; margin-bottom: 20px;
     }
     .insight-title { color: #1565c0; font-weight: bold; font-size: 1.1em; margin-bottom: 5px; }
     .insight-text { color: #0d47a1; font-size: 1.05em; }
-    
-    /* Seasonal Bars */
     .season-bar-bg { background-color: #eee; height: 8px; border-radius: 4px; width: 100%; margin-top: 5px; }
     .season-bar-fill { height: 8px; border-radius: 4px; background: linear-gradient(90deg, #aa00ff, #e040fb); }
 </style>
@@ -81,10 +74,6 @@ if page == "Dashboard":
             df_inv = pd.DataFrame(inventory_data)
             if not df_inv.empty:
                 st.bar_chart(df_inv.set_index('product')['on_hand'], color="#FF4B4B")
-                
-                crit_items = df_inv[df_inv['status'] == 'CRITICAL']
-                if not crit_items.empty:
-                    st.error(f"Action Required: {crit_items.iloc[0]['product']} is below safety levels!")
     
     with c_right:
         st.subheader("Recent Activity")
@@ -109,6 +98,7 @@ elif page == "Inventory Management":
             data = res.json()
             if data:
                 df = pd.DataFrame(data)
+                # Rename for UI consistency
                 df = df.rename(columns={
                     "product": "Product", "sku": "SKU", "on_hand": "Stock", 
                     "stage": "Stage", "category": "Category", "unit_price": "Price",
@@ -148,23 +138,88 @@ elif page == "Inventory Management":
              st.subheader("Quick Actions")
              st.info(f"💡 AI Suggestion: You have {critical_count} critical items.")
              
-             # DIALOG FUNCTIONS
-             @st.dialog("Add Product")
+             # --- ADD PRODUCT (VOICE ENABLED) ---
+             @st.dialog("Add New Product")
              def add_form():
-                with st.form("add"):
-                    sku = st.text_input("SKU")
-                    name = st.text_input("Name")
-                    cat = st.selectbox("Category", ["Raw Material", "Electronics", "Food"])
-                    stage = st.selectbox("Stage", ["Raw Material", "WIP", "Finished"])
-                    stock = st.number_input("Stock", value=100)
-                    price = st.number_input("Price", value=10.0)
-                    if st.form_submit_button("Save"):
-                        requests.post(f"{API_URL}/products/", json={
-                            "sku": sku, "name": name, "category": cat, "stage": stage,
-                            "current_stock": stock, "unit_price": price, 
-                            "safety_stock_level": 10, "optimal_stock_level": 50
-                        })
-                        st.rerun()
+                if 'new_prod_data' not in st.session_state:
+                    st.session_state['new_prod_data'] = {
+                        "name": "", "cat": "Raw Material", "stage": "Raw Material",
+                        "stock": 100, "price": 10.0, "opt": 500, "safe": 50
+                    }
+                if 'voice_text' not in st.session_state:
+                    st.session_state['voice_text'] = ""
+
+                st.write("How do you want to add the product?")
+                tab_ai, tab_manual = st.tabs(["🎙️ Voice / AI", "✍️ Manual Entry"])
+
+                # --- TAB 1: VOICE & AI ---
+                with tab_ai:
+                    st.info("💡 Click the mic and say something like: 'Add 500 sheets of Metal for 20 dollars'")
+                    
+                    c_mic, c_info = st.columns([1, 4])
+                    with c_mic:
+                        text = speech_to_text(language='en', start_prompt="🎤 Record", stop_prompt="🛑 Stop", just_once=False, key='STT')
+                    
+                    if text: st.session_state['voice_text'] = text
+                    
+                    user_text = st.text_area("Transcript (Editable)", value=st.session_state['voice_text'], height=70)
+                    
+                    if st.button("✨ Generate Form", type="primary"):
+                        if user_text:
+                            with st.spinner("🤖 AI is processing your voice command..."):
+                                try:
+                                    res = requests.post(f"{API_URL}/ai/parse_product_info", json={"description": user_text})
+                                    if res.status_code == 200:
+                                        ai_data = res.json()
+                                        st.session_state['new_prod_data'].update({
+                                            'name': ai_data.get('name', ''),
+                                            'cat': ai_data.get('category', 'Raw Material'),
+                                            'stage': ai_data.get('stage', 'Raw Material'),
+                                            'stock': ai_data.get('current_stock', 0),
+                                            'price': ai_data.get('unit_price', 0.0),
+                                            'opt': ai_data.get('optimal_stock_level', 100),
+                                            'safe': ai_data.get('safety_stock_level', 20)
+                                        })
+                                        st.success("✅ Voice processed! Check 'Manual Entry' tab.")
+                                    else: st.error("AI Failed.")
+                                except Exception as e: st.error(f"Error: {e}")
+
+                # --- TAB 2: MANUAL FORM ---
+                with tab_manual:
+                    with st.form("new_product"):
+                        d = st.session_state['new_prod_data']
+                        c_a, c_b = st.columns(2)
+                        sku = c_a.text_input("SKU (Auto)", f"NEW-{pd.Timestamp.now().strftime('%S%f')[:4]}")
+                        name = c_b.text_input("Product Name", value=d['name'])
+                        
+                        cats = ["Electronics", "Raw Material", "Apparel", "Home", "Food"]
+                        cat_idx = cats.index(d['cat']) if d['cat'] in cats else 0
+                        cat = c_a.selectbox("Category", cats, index=cat_idx)
+                        
+                        stages = ["Raw Material", "Work in Progress", "Finished"]
+                        stage_idx = stages.index(d['stage']) if d['stage'] in stages else 0
+                        stage = c_b.selectbox("Stage", stages, index=stage_idx)
+                        
+                        stock = c_a.number_input("Current Stock", min_value=0, value=int(d['stock']))
+                        optimal = c_b.number_input("Optimal Level", min_value=1, value=int(d['opt']))
+                        safety = int(optimal * 0.2) 
+                        price = st.number_input("Unit Price ($)", min_value=0.0, value=float(d['price']))
+                        
+                        if st.form_submit_button("💾 Save to Database"):
+                            payload = {
+                                "sku": sku, "name": name, "category": cat, "stage": stage,
+                                "current_stock": stock, "optimal_stock_level": optimal,
+                                "safety_stock_level": safety, "unit_price": price
+                            }
+                            try:
+                                res = requests.post(f"{API_URL}/products/", json=payload)
+                                if res.status_code == 200:
+                                    st.success("✅ Product Saved!")
+                                    st.session_state['new_prod_data'] = {"name": "", "cat": "Raw Material", "stage": "Raw Material", "stock": 100, "price": 10.0, "opt": 500, "safe": 50}
+                                    st.session_state['voice_text'] = "" 
+                                    st.rerun()
+                                else: st.error(f"Error: {res.text}")
+                            except Exception as e: st.error(f"Connection Error: {e}")
 
              @st.dialog("Edit Product")
              def edit_form():
@@ -200,35 +255,137 @@ elif page == "Inventory Management":
                     requests.delete(f"{API_URL}/products/{opts[sel]}")
                     st.rerun()
 
-             # ACTION BUTTONS GRID
-             c_a, c_b = st.columns(2)
-             if c_a.button("➕ Add", use_container_width=True): add_form()
-             if c_b.button("✏️ Edit", use_container_width=True): edit_form()
-             c_c, c_d = st.columns(2)
-             if c_c.button("🔄 Log", use_container_width=True): log_form()
-             if c_d.button("🗑️ Delete", use_container_width=True): delete_form()
+             # --- AI SMART PRICING ---
+             @st.dialog("💲 AI Smart Pricing")
+             def pricing_form():
+                opts = {f"{row['SKU']} - {row['Product']}": row['id'] for i, row in df.iterrows()}
+                sel = st.selectbox("Select Product", list(opts.keys()))
+                prod_id = opts[sel]
+                curr = df[df['id'] == prod_id].iloc[0]
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Price", f"${curr['Price']}")
+                c2.metric("Stock", int(curr['Stock']))
+                c3.metric("Optimal", int(curr['Optimal']))
+                
+                if st.button("🤖 Analyze Strategy", type="primary"):
+                    with st.spinner("Analyzing Market & Inventory..."):
+                        try:
+                            res = requests.post(f"{API_URL}/ai/pricing_analysis", json={
+                                "product_name": curr['Product'], "current_price": float(curr['Price']),
+                                "current_stock": int(curr['Stock']), "optimal_stock": int(curr['Optimal']),
+                                "category": curr['Category']
+                            })
+                            if res.status_code == 200:
+                                st.session_state['pricing_result'] = res.json()
+                                st.session_state['pricing_id'] = prod_id
+                            else: st.error("AI Error")
+                        except Exception as e: st.error(f"Error: {e}")
 
-        # 4. MAIN TABLE
+                if 'pricing_result' in st.session_state:
+                    res = st.session_state['pricing_result']
+                    st.divider()
+                    st.success(f"Suggestion: {res['action']} price to ${res['new_price']}")
+                    st.info(f"💡 Reason: {res['reason']}")
+                    if st.button("✅ Apply New Price"):
+                        r = requests.put(f"{API_URL}/products/{st.session_state['pricing_id']}", json={"unit_price": res['new_price']})
+                        if r.status_code == 200:
+                            st.success("Price Updated!")
+                            del st.session_state['pricing_result']
+                            st.rerun()
+
+             # --- AI CRYSTAL BALL (SCENARIO SIMULATOR) ---
+             @st.dialog("🔮 The AI Crystal Ball")
+             def simulator_form():
+                st.write("Stress test your inventory against hypothetical events.")
+                scenario_type = st.selectbox("Choose a Scenario", [
+                    "Custom Input...", "🚢 Supplier Delay (Port Strike)", "📈 Viral Demand Spike (+50% Sales)",
+                    "📉 Economic Downturn (-30% Sales)", "🏭 Factory Fire"
+                ])
+                scenario = st.text_area("Describe Scenario", "e.g. Blizzard in NY") if scenario_type == "Custom Input..." else scenario_type
+                
+                if st.button("🚀 Run Simulation", type="primary"):
+                    with st.spinner("Simulating..."):
+                        try:
+                            # --- FIX: Map UI Columns (Capitalized) back to Backend Columns (lowercase) ---
+                            # 1. Select the columns available in the UI dataframe 'df'
+                            sim_df = df[['Product', 'Category', 'Stock', 'Price']].copy()
+                            
+                            # 2. Rename them to match what main.py expects: product, category, on_hand, unit_price
+                            sim_df = sim_df.rename(columns={
+                                'Product': 'product',
+                                'Category': 'category',
+                                'Stock': 'on_hand',
+                                'Price': 'unit_price'
+                            })
+                            
+                            # 3. Convert to list of dictionaries
+                            prod_list = sim_df.to_dict(orient='records')
+                            
+                            # 4. Send request
+                            res = requests.post(f"{API_URL}/ai/simulate_scenario", json={"scenario": scenario, "products": prod_list})
+                            
+                            if res.status_code == 200: st.session_state['sim_result'] = res.json()
+                            else: st.error("Simulation Failed.")
+                        except Exception as e: st.error(f"Error: {e}")
+
+                if 'sim_result' in st.session_state:
+                    res = st.session_state['sim_result']
+                    st.divider()
+                    st.markdown(f"### 🌪️ Impact Score: {res.get('impact_score', 0)}/100")
+                    st.write(res.get('impact_summary'))
+                    st.success(f"💡 **Strategy:** {res.get('recommendation')}")
+
+             # ACTION BUTTONS GRID
+             c1, c2 = st.columns(2)
+             c3, c4 = st.columns(2)
+             if c1.button("➕ Add", use_container_width=True): add_form()
+             if c2.button("✏️ Edit", use_container_width=True): edit_form()
+             if c3.button("🔄 Log", use_container_width=True): log_form()
+             if c4.button("🗑️ Delete", use_container_width=True): delete_form()
+             
+             c5, c6 = st.columns(2)
+             if c5.button("💲 Smart Pricing", use_container_width=True): pricing_form()
+             if c6.button("🔮 Crystal Ball", use_container_width=True): simulator_form()
+
+        # 4. MAIN TABLE (WITH SEARCH BAR)
         st.subheader("Current Inventory Status")
-        df['Stock_Pct'] = df['Stock'] / df['Optimal'].replace(0, 1)
-        st.dataframe(
-            df,
-            column_order=("SKU", "Product", "Category", "Stage", "Stock", "Stock_Pct", "status", "Price"),
-            column_config={
-                "Stock": st.column_config.NumberColumn("Current Stock"),
-                "Stage": st.column_config.TextColumn("Stage"),
-                "Stock_Pct": st.column_config.ProgressColumn("Stock Level", format="%.0f%%", min_value=0, max_value=1.5),
-                "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
-                "status": st.column_config.TextColumn("Status"),
-            },
-            hide_index=True,
-            use_container_width=True
-        )
+        
+        # --- NEW: SEARCH BAR ---
+        search_term = st.text_input("🔍 Search Inventory", placeholder="Type Name, SKU, or Category...")
+        
+        if search_term:
+            df_filtered = df[
+                df['Product'].str.contains(search_term, case=False, na=False) |
+                df['SKU'].str.contains(search_term, case=False, na=False) |
+                df['Category'].str.contains(search_term, case=False, na=False)
+            ]
+        else:
+            df_filtered = df
+
+        if not df_filtered.empty:
+            df_filtered['Stock_Pct'] = df_filtered['Stock'] / df_filtered['Optimal'].replace(0, 1)
+            st.dataframe(
+                df_filtered,
+                column_order=("SKU", "Product", "Category", "Stage", "Stock", "Stock_Pct", "status", "Price"),
+                column_config={
+                    "Stock": st.column_config.NumberColumn("Current Stock"),
+                    "Stage": st.column_config.TextColumn("Stage"),
+                    "Stock_Pct": st.column_config.ProgressColumn("Stock Level", format="%.0f%%", min_value=0, max_value=1.5),
+                    "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
+                    "status": st.column_config.TextColumn("Status"),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+        else:
+            st.info("No items match your search.")
+
     else:
         st.info("No products found.")
 
 # ==========================================
-# PAGE 3: DEMAND FORECASTING (FIXED ERROR)
+# PAGE 3: DEMAND FORECASTING
 # ==========================================
 elif page == "Demand Forecasting":
     st.title("📈 AI Demand Forecasting")
@@ -310,11 +467,10 @@ elif page == "Demand Forecasting":
             cols = st.columns(3)
             for i, f in enumerate(factors):
                 with cols[i % 3]:
-                    # --- FIX FOR ATTRIBUTE ERROR ---
                     if isinstance(f, dict):
                         st.metric(f.get('name', 'Factor'), f"{f.get('score', 50)}/100", f.get('impact', 'Neutral'))
                     else:
-                        st.info(f"• {str(f)}") # Fallback for simple string factors
+                        st.info(f"• {str(f)}")
 
 # ==========================================
 # PAGE 4: PROCUREMENT

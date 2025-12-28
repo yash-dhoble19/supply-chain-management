@@ -10,6 +10,8 @@ import io
 import json
 import os
 from dotenv import load_dotenv
+from geopy.geocoders import Nominatim
+import requests
 
 # --- 1. CONFIGURATION & SETUP ---
 load_dotenv()
@@ -20,15 +22,17 @@ client = OpenAI(
     base_url="https://api.groq.com/openai/v1"
 )
 
+# Initialize Database
 models.Base.metadata.create_all(bind=database.engine)
-from geopy.geocoders import Nominatim
-import requests
 
+# Initialize Geocoder
 geolocator = Nominatim(user_agent="scm_app_free_v1")
+
 app = FastAPI(title="GenAI Supply Chain API")
 
 # --- 2. SCHEMAS ---
 
+# Product Schemas
 class ProductCreate(BaseModel):
     sku: str
     name: str
@@ -54,6 +58,22 @@ class StockMovement(BaseModel):
     quantity_change: int
     reason: str 
 
+# AI Feature Schemas
+class AIProductParseRequest(BaseModel):
+    description: str
+
+class PricingRequest(BaseModel):
+    product_name: str
+    current_price: float
+    current_stock: int
+    optimal_stock: int
+    category: str
+
+# Inventory Report Schema
+class InventoryReportRequest(BaseModel):
+    products: List[dict]
+
+# Order & Logistics Schemas
 class OrderCreate(BaseModel):
     customer_name: str
     delivery_address: str
@@ -74,11 +94,22 @@ class ProcurementRequest(BaseModel):
     quantity: int
     max_days_allowed: int
 
+class SimulationRequest(BaseModel):
+    scenario: str
+    products: List[dict]
+
+class ReorderRequest(BaseModel):
+    product_name: str
+    supplier_name: str = "Valued Supplier"
+    current_stock: int
+    optimal_stock: int
+    unit_price: float
+
 class RouteRequest(BaseModel):
     start_address: str
     end_address: str
 
-# --- 3. AI HELPERS ---
+# --- 3. HELPER FUNCTIONS ---
 
 def analyze_order_with_groq(address):
     try:
@@ -106,8 +137,6 @@ def analyze_market_factors_with_groq(category, trend):
         )
         return response.choices[0].message.content
     except: return '{"ai_adjustment_factor": 1.0}'
-
-# --- 4. LOGISTICS HELPERS ---
 
 def get_coordinates(address):
     try:
@@ -137,13 +166,142 @@ def get_route_data(start_coords, end_coords):
     except:
         return None
 
-# --- 5. ENDPOINTS ---
+# --- 4. API ENDPOINTS ---
 
 @app.get("/")
 def read_root():
     return {"message": "Supply Chain AI System is Online 🚀"}
 
-# --- INVENTORY & PRODUCTS ---
+# --- AI AGENTS (Smart Pricing, Onboarding, Audit, Sim) ---
+
+@app.post("/ai/pricing_analysis")
+def analyze_pricing_strategy(req: PricingRequest):
+    """
+    AI Agent with STRICT math logic to prevent hallucinations.
+    """
+    # 1. Python calculates the ratio first (The Brain)
+    ratio = req.current_stock / req.optimal_stock if req.optimal_stock > 0 else 0
+    
+    # 2. We inject the exact math into the prompt
+    prompt = f"""
+    You are a Strategic Pricing Pricing Algorithm.
+    
+    DATA:
+    - Product: {req.product_name}
+    - Current Price: ${req.current_price}
+    - Stock Ratio (Current/Optimal): {ratio:.2f} (This is {ratio*100:.0f}%)
+    
+    LOGIC RULES (FOLLOW STRICTLY):
+    1. IF Stock Ratio > 1.5 (Over 150%): You MUST suggest LOWER price (Discount) to clear space.
+    2. IF Stock Ratio < 0.3 (Under 30%): You MUST suggest HIGHER price (Premium) due to scarcity.
+    3. IF Stock Ratio is between 0.3 and 1.5: You MUST suggest HOLD (Keep same price) because inventory is healthy.
+    
+    OUTPUT JSON ONLY:
+    {{
+        "new_price": (Float - calculate based on rule),
+        "action": "RAISE" or "LOWER" or "HOLD",
+        "reason": "Explain using the Stock Ratio logic.",
+        "confidence": 95
+    }}
+    """
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are a logic engine. Output strict JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI Pricing Failed: {str(e)}")
+
+@app.post("/ai/parse_product_info")
+def parse_product_info(request: AIProductParseRequest):
+    """
+    Takes raw string and returns structured JSON for frontend form.
+    """
+    prompt = f"""
+    You are a Supply Chain Data Entry Assistant.
+    User Input: "{request.description}"
+    
+    Task: Extract product details. If information is missing, INTELLIGENTLY GUESS based on industry standards.
+    
+    Output JSON ONLY:
+    {{
+        "name": "...",
+        "category": "...",
+        "stage": "...",
+        "current_stock": 0,
+        "unit_price": 0.0,
+        "optimal_stock_level": 0,
+        "safety_stock_level": 0
+    }}
+    """
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You output strictly valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI Parse Failed: {str(e)}")
+
+@app.post("/ai/audit_inventory")
+def audit_inventory(req: InventoryReportRequest):
+    data_summary = "\n".join([f"- {p['product']} ({p['category']}): Stock {p['on_hand']}/{p['optimal_stock']}, Price ${p['unit_price']}" for p in req.products])
+    prompt = f"""
+    You are a Supply Chain CFO. Current Inventory: {data_summary}
+    Task: Write a Strategic Audit Report (Markdown).
+    Include: Executive Summary, Critical Risks, Financial efficiency, Top 3 Recommendations.
+    """
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return {"report": response.choices[0].message.content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Audit Failed: {str(e)}")
+
+@app.post("/ai/simulate_scenario")
+def simulate_scenario(req: SimulationRequest):
+    context = "\n".join([f"- {p['product']}: Stock {p['on_hand']}, Price ${p['unit_price']}" for p in req.products])
+    prompt = f"""
+    Risk Analyst. Inventory: {context}. SCENARIO: "{req.scenario}"
+    Analyze impact. Output JSON: impact_score (0-100), impact_summary, affected_products (list), recommendation.
+    """
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "system", "content": "JSON only."}, {"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e: raise HTTPException(500, str(e))
+
+@app.post("/ai/generate_reorder_email")
+def generate_reorder_email(req: ReorderRequest):
+    needed = max(0, req.optimal_stock - req.current_stock)
+    if needed == 0: needed = 100
+    cost = needed * req.unit_price
+    prompt = f"""
+    Write PO email. Supplier: {req.supplier_name}. Product: {req.product_name}. Qty: {needed}. Cost: ${cost}.
+    """
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return {"email_draft": response.choices[0].message.content, "recommended_qty": needed}
+    except Exception as e: raise HTTPException(500, str(e))
+
+# --- INVENTORY CRUD ---
 
 @app.post("/products/")
 def create_product(product: ProductCreate, db: Session = Depends(database.get_db)):
@@ -159,7 +317,6 @@ def update_product(product_id: int, product: ProductUpdate, db: Session = Depend
     db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
     if not db_product: raise HTTPException(status_code=404, detail="Product not found")
     
-    # Update fields if provided
     if product.stage: db_product.stage = product.stage
     if product.current_stock is not None: db_product.current_stock = product.current_stock
     if product.unit_price is not None: db_product.unit_price = product.unit_price
@@ -172,7 +329,6 @@ def update_product(product_id: int, product: ProductUpdate, db: Session = Depend
 def delete_product(product_id: int, db: Session = Depends(database.get_db)):
     db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
     if not db_product: raise HTTPException(status_code=404, detail="Product not found")
-    
     db.delete(db_product)
     db.commit()
     return {"message": "Product deleted"}
@@ -182,10 +338,7 @@ def log_stock_movement(movement: StockMovement, db: Session = Depends(database.g
     product = db.query(models.Product).filter(models.Product.id == movement.product_id).first()
     if not product: raise HTTPException(status_code=404, detail="Product not found")
 
-    # Update Stock
     product.current_stock += movement.quantity_change
-    
-    # Log History
     db_log = models.InventoryLog(
         product_id=movement.product_id,
         quantity_change=movement.quantity_change,
@@ -206,6 +359,9 @@ def analyze_inventory(db: Session = Depends(database.get_db)):
         if p.current_stock < p.safety_stock_level: 
             status = "CRITICAL"
             rec = "Replenish immediately."
+        elif p.current_stock < (p.safety_stock_level * 1.2):
+            status = "LOW"
+            rec = "Plan Reorder soon."
         
         results.append({
             "id": p.id,
@@ -225,14 +381,13 @@ def create_order(order: OrderCreate, db: Session = Depends(database.get_db)):
     db_order = models.Order(**order.dict(), status="PENDING", ai_risk_assessment=risk)
     db.add(db_order)
     db.commit()
-    db.refresh(db_order)
     return db_order
 
 @app.get("/orders/", response_model=List[OrderResponse])
 def read_orders(db: Session = Depends(database.get_db)):
     return db.query(models.Order).all()
 
-# --- ADVANCED FEATURES ---
+# --- FORECASTING, PROCUREMENT, LOGISTICS ---
 
 @app.post("/forecast/upload")
 async def generate_forecast(category: str = Form(...), file: UploadFile = File(...)):
