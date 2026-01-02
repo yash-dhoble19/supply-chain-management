@@ -685,6 +685,77 @@ def draft_negotiation_email(req: ReorderRequest):
         raise HTTPException(status_code=500, detail=f"AI Email Failed: {str(e)}")
 
 # --- EXISTING AI AGENTS ---
+@app.post("/procurement/suppliers/{supplier_id}/negotiation_email")
+def generate_supplier_negotiation_email(supplier_id: int, db: Session = Depends(database.get_db)):
+    """
+    Generate an AI-powered negotiation email for a specific supplier
+    """
+    # Get supplier details
+    supplier = db.query(models.Supplier).filter(models.Supplier.id == supplier_id).first()
+    
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    
+    # Get recent POs with this supplier
+    recent_pos = db.query(models.PurchaseOrder).filter(
+        models.PurchaseOrder.supplier_id == supplier_id
+    ).order_by(models.PurchaseOrder.created_at.desc()).limit(5).all()
+    
+    # Calculate total business volume
+    total_volume = sum(po.total_value or 0 for po in recent_pos)
+    po_count = len(recent_pos)
+    
+    # Generate context for AI
+    prompt = f"""
+    Write a professional procurement negotiation email to strengthen our partnership.
+    
+    Supplier Details:
+    - Name: {supplier.name}
+    - Contact: {supplier.contact_email}
+    - Category: {supplier.category}
+    - Current Reliability Score: {supplier.reliability_score}/100
+    - Average Delivery Time: {supplier.delivery_speed_days} days
+    - Current Price per Unit: ${supplier.price_per_unit}
+    
+    Our Business Relationship:
+    - Total Purchase Orders: {po_count}
+    - Total Business Volume: ${total_volume:,.2f}
+    
+    Email Goals:
+    1. Acknowledge our strong partnership
+    2. Discuss potential volume discounts (we're growing)
+    3. Explore faster delivery options
+    4. Request quarterly business review meeting
+    
+    Tone: Professional, collaborative, forward-thinking
+    Include: Subject line, greeting, 3-4 paragraph body, call-to-action, professional closing
+    
+    Format as a complete email ready to send.
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are a professional procurement manager writing strategic supplier emails."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        email_content = response.choices[0].message.content
+        
+        return {
+            "email": email_content,
+            "supplier_name": supplier.name,
+            "supplier_email": supplier.contact_email,
+            "context": {
+                "total_pos": po_count,
+                "total_volume": round(total_volume, 2),
+                "reliability": supplier.reliability_score
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI Email Generation Failed: {str(e)}")
 
 @app.post("/ai/pricing_analysis")
 def analyze_pricing_strategy(req: PricingRequest):
@@ -726,6 +797,10 @@ def analyze_pricing_strategy(req: PricingRequest):
 
 @app.post("/ai/parse_product_info")
 def parse_product_info(request: AIProductParseRequest):
+    # Validate input
+    if not request.description or request.description.strip() == "":
+        raise HTTPException(status_code=400, detail="Description cannot be empty")
+    
     prompt = f"""
     Extract product details from: "{request.description}"
     
@@ -741,6 +816,13 @@ def parse_product_info(request: AIProductParseRequest):
     }}
     """
     try:
+        # Check if API key is configured
+        if not GROQ_API_KEY:
+            raise HTTPException(
+                status_code=500, 
+                detail="GROQ_API_KEY not configured. Check your .env file."
+            )
+        
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
@@ -749,9 +831,24 @@ def parse_product_info(request: AIProductParseRequest):
             ],
             response_format={"type": "json_object"}
         )
-        return json.loads(response.choices[0].message.content)
+        
+        # Parse the JSON response
+        result = json.loads(response.choices[0].message.content)
+        return result
+        
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"AI returned invalid JSON: {str(e)}"
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI Parse Failed: {str(e)}")
+        # Log the full error for debugging
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500, 
+            detail=f"AI Parse Failed: {str(e)}"
+        )
 
 @app.post("/ai/audit_inventory")
 def audit_inventory(req: InventoryReportRequest):

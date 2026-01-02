@@ -388,7 +388,9 @@ elif page == "Inventory Management":
                                             'safe': ai_data.get('safety_stock_level', 20)
                                         })
                                         st.success("✅ Voice processed! Check 'Manual Entry' tab.")
-                                    else: st.error("AI Failed.")
+                                    else:  # Show the actual error from the API
+                                           error_detail = res.json().get('detail', res.text)
+                                           st.error(f"❌ AI Processing Failed: {error_detail}")
                                 except Exception as e: st.error(f"Error: {e}")
 
                 with tab_manual:
@@ -1229,3 +1231,4 @@ elif page == "Logistics Risk":
             st_folium(m, width="100%", height=500)
         else:
             st_folium(folium.Map(location=[20, 78], zoom_start=5), width="100%", height=500)
+            
