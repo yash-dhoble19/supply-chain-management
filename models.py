@@ -1,4 +1,4 @@
-# model.py
+# models.py
 from sqlalchemy import (
     Column,
     Integer,
@@ -139,8 +139,13 @@ class Supplier(Base):
     name = Column(String, unique=True, nullable=False)
     contact_email = Column(String, nullable=False)
 
-    reliability_score = Column(Float)  # 1–10 scale
-    delivery_speed_days = Column(Integer)
+    # --- Updated Fields for Dashboard Compatibility ---
+    category = Column(String, default="General")
+    reliability_score = Column(Float, default=95.0)  # 1–10 scale
+    delivery_speed_days = Column(Integer, default=5)
+    lead_time_days = Column(Integer, default=5) # Alias for compatibility
+    price_per_unit = Column(Float, default=0.0) # Added for quick cost calc
+    delivery_cost = Column(Float, default=0.0)
 
     purchase_orders = relationship(
         "PurchaseOrder",
@@ -163,7 +168,13 @@ class PurchaseOrder(Base):
         nullable=False
     )
 
-    total_amount = Column(DECIMAL(10, 2))
+    # --- Updated Fields for Dashboard Compatibility ---
+    product_name = Column(String, nullable=True) # Snapshot for simple display
+    quantity = Column(Integer, nullable=True)
+    total_value = Column(Float, default=0.0)
+    priority = Column(String, default="Medium")
+
+    total_amount = Column(DECIMAL(10, 2), nullable=True) # Kept original field
     status = Column(
         String,
         default="DRAFT"
@@ -173,7 +184,8 @@ class PurchaseOrder(Base):
         DateTime(timezone=True),
         server_default=func.now()
     )
-    expected_delivery_date = Column(Date)
+    expected_delivery = Column(DateTime, nullable=True)
+    expected_delivery_date = Column(Date, nullable=True)
 
     supplier = relationship("Supplier", back_populates="purchase_orders")
     items = relationship(

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, Form
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from pydantic import BaseModel
 from openai import OpenAI
 import models, database
@@ -58,6 +58,24 @@ class StockMovement(BaseModel):
     quantity_change: int
     reason: str 
 
+# Supplier Schemas
+class SupplierCreate(BaseModel):
+    name: str
+    contact_email: str
+    category: str
+    reliability_score: float = 95.0
+    delivery_speed_days: int = 5
+    price_per_unit: float = 10.0
+
+# Purchase Order Schemas
+class POCreate(BaseModel):
+    supplier_id: int
+    product_id: int
+    product_name: str
+    quantity: int
+    unit_price: float
+    priority: str = "Medium"
+
 # AI Feature Schemas
 class AIProductParseRequest(BaseModel):
     description: str
@@ -69,11 +87,9 @@ class PricingRequest(BaseModel):
     optimal_stock: int
     category: str
 
-# Inventory Report Schema
 class InventoryReportRequest(BaseModel):
     products: List[dict]
 
-# Order & Logistics Schemas
 class OrderCreate(BaseModel):
     customer_name: str
     delivery_address: str
@@ -166,41 +182,532 @@ def get_route_data(start_coords, end_coords):
     except:
         return None
 
+# --- NEW: PROCUREMENT-SPECIFIC HELPER FUNCTIONS ---
+
+def calculate_supply_chain_health_score(db: Session):
+    """
+    Calculates a comprehensive health score (0-100) based on:
+    - Critical stock items
+    - Pending POs
+    - Supplier reliability
+    """
+    products = db.query(models.Product).all()
+    suppliers = db.query(models.Supplier).all()
+    pending_pos = db.query(models.PurchaseOrder).filter(
+        models.PurchaseOrder.status.in_(["DRAFT", "APPROVED"])
+    ).count()
+    
+    # Calculate critical items (< 20% of optimal)
+    critical_items = sum(1 for p in products if p.current_stock < (p.optimal_stock_level * 0.2))
+    critical_penalty = min(critical_items * 5, 40)  # Max 40 points penalty
+    
+    # Pending PO penalty
+    po_penalty = min(pending_pos * 3, 20)  # Max 20 points penalty
+    
+    # Supplier reliability (average)
+    avg_reliability = sum(s.reliability_score for s in suppliers) / len(suppliers) if suppliers else 90
+    supplier_bonus = (avg_reliability - 80) / 2  # Bonus if above 80
+    
+    health_score = 100 - critical_penalty - po_penalty + supplier_bonus
+    return max(0, min(100, health_score))
+
+def calculate_supplier_score(supplier, product_price=None):
+    """
+    Smart supplier scoring algorithm:
+    - Reliability: 40%
+    - Lead Time (inverse): 30%
+    - Price (inverse): 30%
+    """
+    # Normalize reliability (0-100 to 0-1)
+    reliability_norm = supplier.reliability_score / 100
+    
+    # Normalize lead time (inverse - faster is better)
+    # Assuming 1 day is best, 30 days is worst
+    lead_time_norm = max(0, 1 - (supplier.delivery_speed_days / 30))
+    
+    # Normalize price if provided
+    if product_price:
+        price_norm = max(0, 1 - (supplier.price_per_unit / (product_price * 2)))
+    else:
+        price_norm = 0.7  # Default neutral score
+    
+    # Weighted score
+    score = (reliability_norm * 0.4) + (lead_time_norm * 0.3) + (price_norm * 0.3)
+    return round(score * 100, 2)
+
+def find_best_supplier_for_product(product, db: Session):
+    """
+    Finds the best supplier match for a given product using smart logic
+    """
+    suppliers = db.query(models.Supplier).filter(
+        models.Supplier.category == product.category
+    ).all()
+    
+    if not suppliers:
+        # Fallback to any supplier
+        suppliers = db.query(models.Supplier).all()
+    
+    if not suppliers:
+        return None
+    
+    # Score all suppliers
+    supplier_scores = []
+    for supplier in suppliers:
+        score = calculate_supplier_score(supplier, product.unit_price)
+        supplier_scores.append({
+            "supplier": supplier,
+            "score": score
+        })
+    
+    # Sort by score descending
+    supplier_scores.sort(key=lambda x: x["score"], reverse=True)
+    return supplier_scores[0]["supplier"] if supplier_scores else None
+
+def generate_ai_morning_briefing(health_score, critical_count, pending_pos, db: Session):
+    """
+    Uses LLM to generate a strategic morning briefing
+    """
+    products = db.query(models.Product).all()
+    critical_products = [p.name for p in products if p.current_stock < (p.optimal_stock_level * 0.2)][:3]
+    
+    prompt = f"""
+    You are a Supply Chain Director AI. Generate a concise morning briefing (3-4 sentences).
+    
+    Data:
+    - Health Score: {health_score}/100
+    - Critical Items: {critical_count} (Examples: {', '.join(critical_products) if critical_products else 'None'})
+    - Pending POs: {pending_pos}
+    
+    Tone: Professional, actionable, and strategic. Highlight the most urgent concern first.
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content
+    except:
+        return "Market conditions are stable. Review critical items and expedite pending orders."
+
+def generate_urgency_reasoning(product, supplier):
+    """
+    Uses LLM to explain WHY a product needs urgent attention
+    """
+    stock_pct = (product.current_stock / product.optimal_stock_level * 100) if product.optimal_stock_level > 0 else 0
+    
+    prompt = f"""
+    Generate a 1-2 sentence urgent reasoning for procurement.
+    
+    Product: {product.name}
+    Current Stock: {product.current_stock} ({stock_pct:.0f}% of optimal)
+    Best Supplier: {supplier.name} ({supplier.delivery_speed_days} days delivery)
+    
+    Be direct and actionable.
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content
+    except:
+        return f"Stock critically low at {stock_pct:.0f}%. Immediate replenishment required."
+
 # --- 4. API ENDPOINTS ---
 
 @app.get("/")
 def read_root():
     return {"message": "Supply Chain AI System is Online 🚀"}
 
-# --- AI AGENTS (Smart Pricing, Onboarding, Audit, Sim) ---
+# --- NEW: PROCUREMENT ENDPOINTS ---
+
+@app.get("/procurement/health")
+def get_procurement_health(db: Session = Depends(database.get_db)):
+    """
+    Returns comprehensive supply chain health metrics
+    """
+    health_score = calculate_supply_chain_health_score(db)
+    
+    products = db.query(models.Product).all()
+    critical_count = sum(1 for p in products if p.current_stock < (p.optimal_stock_level * 0.2))
+    
+    pending_pos = db.query(models.PurchaseOrder).filter(
+        models.PurchaseOrder.status.in_(["DRAFT", "APPROVED"])
+    ).count()
+    
+    briefing = generate_ai_morning_briefing(health_score, critical_count, pending_pos, db)
+    
+    return {
+        "health_score": round(health_score, 1),
+        "critical_items_count": critical_count,
+        "pending_pos": pending_pos,
+        "morning_briefing": briefing,
+        "status": "CRITICAL" if health_score < 60 else "WARNING" if health_score < 80 else "HEALTHY"
+    }
+
+@app.get("/procurement/recommendations")
+def get_smart_recommendations(db: Session = Depends(database.get_db)):
+    """
+    Returns AI-powered procurement recommendations with matched suppliers
+    """
+    products = db.query(models.Product).all()
+    
+    # Identify products that need reordering
+    critical_products = [
+        p for p in products 
+        if p.current_stock < (p.optimal_stock_level * 0.5)
+    ]
+    
+    recommendations = []
+    for product in critical_products[:10]:  # Limit to top 10
+        # Find best supplier
+        best_supplier = find_best_supplier_for_product(product, db)
+        
+        if not best_supplier:
+            continue
+        
+        # Calculate urgency
+        stock_pct = (product.current_stock / product.optimal_stock_level * 100) if product.optimal_stock_level > 0 else 0
+        
+        if stock_pct < 20:
+            urgency = "CRITICAL"
+            urgency_color = "#D32F2F"
+        elif stock_pct < 35:
+            urgency = "HIGH"
+            urgency_color = "#F57C00"
+        else:
+            urgency = "MEDIUM"
+            urgency_color = "#FBC02D"
+        
+        # Calculate quantity needed
+        qty_needed = max(0, product.optimal_stock_level - product.current_stock)
+        
+        # Calculate estimated cost
+        total_cost = qty_needed * product.unit_price
+        
+        # Generate AI reasoning
+        reasoning = generate_urgency_reasoning(product, best_supplier)
+        
+        # Calculate supplier score
+        supplier_score = calculate_supplier_score(best_supplier, product.unit_price)
+        
+        recommendations.append({
+            "product_id": product.id,
+            "product_name": product.name,
+            "sku": product.sku,
+            "current_stock": product.current_stock,
+            "optimal_stock": product.optimal_stock_level,
+            "stock_percentage": round(stock_pct, 1),
+            "urgency": urgency,
+            "urgency_color": urgency_color,
+            "quantity_needed": qty_needed,
+            "supplier_id": best_supplier.id,
+            "supplier_name": best_supplier.name,
+            "supplier_score": supplier_score,
+            "delivery_days": best_supplier.delivery_speed_days,
+            "estimated_cost": round(total_cost, 2),
+            "ai_reasoning": reasoning
+        })
+    
+    # Sort by urgency and stock percentage
+    urgency_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2}
+    recommendations.sort(key=lambda x: (urgency_order[x["urgency"]], x["stock_percentage"]))
+    
+    return recommendations
+
+@app.get("/procurement/suppliers/analysis")
+def analyze_suppliers(db: Session = Depends(database.get_db)):
+    """
+    Returns detailed supplier performance analysis
+    """
+    suppliers = db.query(models.Supplier).all()
+    
+    analysis = []
+    for supplier in suppliers:
+        # Get PO history
+        pos = db.query(models.PurchaseOrder).filter(
+            models.PurchaseOrder.supplier_id == supplier.id
+        ).all()
+        
+        total_pos = len(pos)
+        completed_pos = len([p for p in pos if p.status == "RECEIVED"])
+        
+        # Calculate on-time delivery rate
+        on_time_rate = (completed_pos / total_pos * 100) if total_pos > 0 else 0
+        
+        # AI verdict
+        if supplier.reliability_score >= 90 and on_time_rate >= 85:
+            verdict = "PREFERRED"
+            verdict_color = "#2E7D32"
+        elif supplier.reliability_score < 70 or on_time_rate < 60:
+            verdict = "AT_RISK"
+            verdict_color = "#C62828"
+        else:
+            verdict = "REVIEW_NEEDED"
+            verdict_color = "#F57C00"
+        
+        # Calculate overall score
+        overall_score = calculate_supplier_score(supplier)
+        
+        analysis.append({
+            "id": supplier.id,
+            "name": supplier.name,
+            "category": supplier.category,
+            "reliability_score": supplier.reliability_score,
+            "delivery_speed_days": supplier.delivery_speed_days,
+            "price_per_unit": supplier.price_per_unit,
+            "total_pos": total_pos,
+            "on_time_delivery_rate": round(on_time_rate, 1),
+            "overall_score": overall_score,
+            "verdict": verdict,
+            "verdict_color": verdict_color
+        })
+    
+    return analysis
+
+@app.post("/procurement/suppliers/create")
+def create_supplier(supplier: SupplierCreate, db: Session = Depends(database.get_db)):
+    """
+    Creates a new supplier with AI trust score calculation
+    """
+    # Check if supplier already exists
+    existing = db.query(models.Supplier).filter(
+        models.Supplier.name == supplier.name
+    ).first()
+    
+    if existing:
+        raise HTTPException(status_code=400, detail="Supplier with this name already exists")
+    
+    # Create supplier
+    db_supplier = models.Supplier(
+        name=supplier.name,
+        contact_email=supplier.contact_email,
+        category=supplier.category,
+        reliability_score=supplier.reliability_score,
+        delivery_speed_days=supplier.delivery_speed_days,
+        lead_time_days=supplier.delivery_speed_days,
+        price_per_unit=supplier.price_per_unit
+    )
+    
+    db.add(db_supplier)
+    db.commit()
+    db.refresh(db_supplier)
+    
+    # Calculate initial trust score
+    trust_score = calculate_supplier_score(db_supplier)
+    
+    return {
+        "message": "Supplier created successfully",
+        "supplier_id": db_supplier.id,
+        "initial_trust_score": trust_score
+    }
+
+@app.post("/procurement/po/create")
+def create_purchase_order(po: POCreate, db: Session = Depends(database.get_db)):
+    """
+    Creates a new purchase order with smart defaults
+    """
+    # Validate supplier and product
+    supplier = db.query(models.Supplier).filter(models.Supplier.id == po.supplier_id).first()
+    product = db.query(models.Product).filter(models.Product.id == po.product_id).first()
+    
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    # Generate PO number
+    po_count = db.query(models.PurchaseOrder).count()
+    po_number = f"PO-{datetime.now().strftime('%Y%m')}-{po_count + 1:04d}"
+    
+    # Calculate expected delivery
+    expected_delivery = datetime.now() + timedelta(days=supplier.delivery_speed_days)
+    
+    # Calculate total value
+    total_value = po.quantity * po.unit_price
+    
+    # Create PO
+    db_po = models.PurchaseOrder(
+        po_number=po_number,
+        supplier_id=po.supplier_id,
+        product_name=po.product_name,
+        quantity=po.quantity,
+        total_value=total_value,
+        total_amount=total_value,
+        priority=po.priority,
+        status="DRAFT",
+        expected_delivery=expected_delivery,
+        expected_delivery_date=expected_delivery.date()
+    )
+    
+    db.add(db_po)
+    db.commit()
+    db.refresh(db_po)
+    
+    # Create PO Item
+    po_item = models.POItem(
+        po_id=db_po.id,
+        product_id=po.product_id,
+        quantity_ordered=po.quantity,
+        unit_price=po.unit_price
+    )
+    
+    db.add(po_item)
+    db.commit()
+    
+    return {
+        "message": "Purchase order created",
+        "po_number": po_number,
+        "po_id": db_po.id,
+        "expected_delivery": expected_delivery.strftime("%Y-%m-%d")
+    }
+
+@app.get("/procurement/po/list")
+def list_purchase_orders(db: Session = Depends(database.get_db)):
+    """
+    Returns all purchase orders with enhanced details
+    """
+    pos = db.query(models.PurchaseOrder).all()
+    
+    result = []
+    for po in pos:
+        supplier = db.query(models.Supplier).filter(models.Supplier.id == po.supplier_id).first()
+        
+        # Calculate days until delivery
+        if po.expected_delivery:
+            days_remaining = (po.expected_delivery - datetime.now()).days
+        else:
+            days_remaining = 0
+        
+        # Status color
+        status_colors = {
+            "DRAFT": "#9E9E9E",
+            "APPROVED": "#2196F3",
+            "IN_TRANSIT": "#FF9800",
+            "RECEIVED": "#4CAF50"
+        }
+        
+        result.append({
+            "id": po.id,
+            "po_number": po.po_number,
+            "supplier_name": supplier.name if supplier else "Unknown",
+            "product_name": po.product_name,
+            "quantity": po.quantity,
+            "total_value": po.total_value,
+            "status": po.status,
+            "status_color": status_colors.get(po.status, "#757575"),
+            "priority": po.priority,
+            "expected_delivery": po.expected_delivery.strftime("%Y-%m-%d") if po.expected_delivery else "N/A",
+            "days_remaining": days_remaining,
+            "created_at": po.created_at.strftime("%Y-%m-%d") if po.created_at else "N/A"
+        })
+    
+    return result
+
+@app.put("/procurement/po/{po_id}/status")
+def update_po_status(po_id: int, status: str, db: Session = Depends(database.get_db)):
+    """
+    Updates PO status and triggers stock update if received
+    """
+    valid_statuses = ["DRAFT", "APPROVED", "IN_TRANSIT", "RECEIVED"]
+    
+    if status not in valid_statuses:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    
+    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id).first()
+    
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+    
+    po.status = status
+    
+    # If status is RECEIVED, update product stock
+    if status == "RECEIVED":
+        po_items = db.query(models.POItem).filter(models.POItem.po_id == po_id).all()
+        
+        for item in po_items:
+            product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
+            if product:
+                product.current_stock += item.quantity_ordered
+                
+                # Log the movement
+                log = models.InventoryLog(
+                    product_id=product.id,
+                    quantity_change=item.quantity_ordered,
+                    reason=f"PO Received: {po.po_number}",
+                    change_date=datetime.utcnow()
+                )
+                db.add(log)
+    
+    db.commit()
+    
+    return {"message": "Status updated", "new_status": status}
+
+@app.post("/procurement/draft_email")
+def draft_negotiation_email(req: ReorderRequest):
+    """
+    Generates a professional negotiation email using AI
+    """
+    needed = max(0, req.optimal_stock - req.current_stock)
+    if needed == 0:
+        needed = 100
+    
+    cost = needed * req.unit_price
+    
+    prompt = f"""
+    Write a professional procurement email for a Purchase Order.
+    
+    Details:
+    - Supplier: {req.supplier_name}
+    - Product: {req.product_name}
+    - Quantity: {needed} units
+    - Estimated Cost: ${cost:,.2f}
+    - Urgency: Current stock is {req.current_stock}/{req.optimal_stock}
+    
+    Tone: Professional, polite, and emphasize partnership.
+    Include: Subject line, greeting, body with PO details, and polite closing.
+    Format as a real email.
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return {
+            "email_draft": response.choices[0].message.content,
+            "recommended_qty": needed,
+            "estimated_cost": round(cost, 2)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI Email Failed: {str(e)}")
+
+# --- EXISTING AI AGENTS ---
 
 @app.post("/ai/pricing_analysis")
 def analyze_pricing_strategy(req: PricingRequest):
-    """
-    AI Agent with STRICT math logic to prevent hallucinations.
-    """
-    # 1. Python calculates the ratio first (The Brain)
     ratio = req.current_stock / req.optimal_stock if req.optimal_stock > 0 else 0
     
-    # 2. We inject the exact math into the prompt
     prompt = f"""
-    You are a Strategic Pricing Pricing Algorithm.
+    You are a Strategic Pricing Algorithm.
     
     DATA:
     - Product: {req.product_name}
     - Current Price: ${req.current_price}
-    - Stock Ratio (Current/Optimal): {ratio:.2f} (This is {ratio*100:.0f}%)
+    - Stock Ratio: {ratio:.2f}
     
-    LOGIC RULES (FOLLOW STRICTLY):
-    1. IF Stock Ratio > 1.5 (Over 150%): You MUST suggest LOWER price (Discount) to clear space.
-    2. IF Stock Ratio < 0.3 (Under 30%): You MUST suggest HIGHER price (Premium) due to scarcity.
-    3. IF Stock Ratio is between 0.3 and 1.5: You MUST suggest HOLD (Keep same price) because inventory is healthy.
+    RULES:
+    1. IF Ratio > 1.5: LOWER price
+    2. IF Ratio < 0.3: RAISE price
+    3. ELSE: HOLD price
     
-    OUTPUT JSON ONLY:
+    OUTPUT JSON:
     {{
-        "new_price": (Float - calculate based on rule),
-        "action": "RAISE" or "LOWER" or "HOLD",
-        "reason": "Explain using the Stock Ratio logic.",
+        "new_price": float,
+        "action": "RAISE/LOWER/HOLD",
+        "reason": "string",
         "confidence": 95
     }}
     """
@@ -208,7 +715,7 @@ def analyze_pricing_strategy(req: PricingRequest):
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "You are a logic engine. Output strict JSON."},
+                {"role": "system", "content": "Output strict JSON."},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"}
@@ -219,16 +726,10 @@ def analyze_pricing_strategy(req: PricingRequest):
 
 @app.post("/ai/parse_product_info")
 def parse_product_info(request: AIProductParseRequest):
-    """
-    Takes raw string and returns structured JSON for frontend form.
-    """
     prompt = f"""
-    You are a Supply Chain Data Entry Assistant.
-    User Input: "{request.description}"
+    Extract product details from: "{request.description}"
     
-    Task: Extract product details. If information is missing, INTELLIGENTLY GUESS based on industry standards.
-    
-    Output JSON ONLY:
+    Output JSON:
     {{
         "name": "...",
         "category": "...",
@@ -243,7 +744,7 @@ def parse_product_info(request: AIProductParseRequest):
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "You output strictly valid JSON."},
+                {"role": "system", "content": "Output JSON only."},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"}
@@ -254,11 +755,10 @@ def parse_product_info(request: AIProductParseRequest):
 
 @app.post("/ai/audit_inventory")
 def audit_inventory(req: InventoryReportRequest):
-    data_summary = "\n".join([f"- {p['product']} ({p['category']}): Stock {p['on_hand']}/{p['optimal_stock']}, Price ${p['unit_price']}" for p in req.products])
+    data_summary = "\n".join([f"- {p['product']}: Stock {p['on_hand']}/{p['optimal_stock']}" for p in req.products])
     prompt = f"""
-    You are a Supply Chain CFO. Current Inventory: {data_summary}
-    Task: Write a Strategic Audit Report (Markdown).
-    Include: Executive Summary, Critical Risks, Financial efficiency, Top 3 Recommendations.
+    Supply Chain CFO Audit. Inventory: {data_summary}
+    Write Strategic Report (Markdown): Executive Summary, Risks, Recommendations.
     """
     try:
         response = client.chat.completions.create(
@@ -271,10 +771,10 @@ def audit_inventory(req: InventoryReportRequest):
 
 @app.post("/ai/simulate_scenario")
 def simulate_scenario(req: SimulationRequest):
-    context = "\n".join([f"- {p['product']}: Stock {p['on_hand']}, Price ${p['unit_price']}" for p in req.products])
+    context = "\n".join([f"- {p['product']}: Stock {p['on_hand']}" for p in req.products])
     prompt = f"""
-    Risk Analyst. Inventory: {context}. SCENARIO: "{req.scenario}"
-    Analyze impact. Output JSON: impact_score (0-100), impact_summary, affected_products (list), recommendation.
+    Risk Analyst. Inventory: {context}. Scenario: "{req.scenario}"
+    Output JSON: impact_score, impact_summary, affected_products, recommendation.
     """
     try:
         response = client.chat.completions.create(
@@ -283,30 +783,20 @@ def simulate_scenario(req: SimulationRequest):
             response_format={"type": "json_object"}
         )
         return json.loads(response.choices[0].message.content)
-    except Exception as e: raise HTTPException(500, str(e))
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 @app.post("/ai/generate_reorder_email")
 def generate_reorder_email(req: ReorderRequest):
-    needed = max(0, req.optimal_stock - req.current_stock)
-    if needed == 0: needed = 100
-    cost = needed * req.unit_price
-    prompt = f"""
-    Write PO email. Supplier: {req.supplier_name}. Product: {req.product_name}. Qty: {needed}. Cost: ${cost}.
-    """
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return {"email_draft": response.choices[0].message.content, "recommended_qty": needed}
-    except Exception as e: raise HTTPException(500, str(e))
+    return draft_negotiation_email(req)
 
 # --- INVENTORY CRUD ---
 
 @app.post("/products/")
 def create_product(product: ProductCreate, db: Session = Depends(database.get_db)):
     existing = db.query(models.Product).filter(models.Product.sku == product.sku).first()
-    if existing: raise HTTPException(status_code=400, detail="SKU exists")
+    if existing:
+        raise HTTPException(status_code=400, detail="SKU exists")
     db_product = models.Product(**product.dict())
     db.add(db_product)
     db.commit()
@@ -315,12 +805,17 @@ def create_product(product: ProductCreate, db: Session = Depends(database.get_db
 @app.put("/products/{product_id}")
 def update_product(product_id: int, product: ProductUpdate, db: Session = Depends(database.get_db)):
     db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
-    if not db_product: raise HTTPException(status_code=404, detail="Product not found")
+    if not db_product:
+        raise HTTPException(status_code=404, detail="Product not found")
     
-    if product.stage: db_product.stage = product.stage
-    if product.current_stock is not None: db_product.current_stock = product.current_stock
-    if product.unit_price is not None: db_product.unit_price = product.unit_price
-    if product.category: db_product.category = product.category
+    if product.stage:
+        db_product.stage = product.stage
+    if product.current_stock is not None:
+        db_product.current_stock = product.current_stock
+    if product.unit_price is not None:
+        db_product.unit_price = product.unit_price
+    if product.category:
+        db_product.category = product.category
     
     db.commit()
     return {"message": "Updated"}
@@ -328,7 +823,8 @@ def update_product(product_id: int, product: ProductUpdate, db: Session = Depend
 @app.delete("/products/{product_id}")
 def delete_product(product_id: int, db: Session = Depends(database.get_db)):
     db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
-    if not db_product: raise HTTPException(status_code=404, detail="Product not found")
+    if not db_product:
+        raise HTTPException(status_code=404, detail="Product not found")
     db.delete(db_product)
     db.commit()
     return {"message": "Product deleted"}
@@ -336,7 +832,8 @@ def delete_product(product_id: int, db: Session = Depends(database.get_db)):
 @app.post("/inventory/logs")
 def log_stock_movement(movement: StockMovement, db: Session = Depends(database.get_db)):
     product = db.query(models.Product).filter(models.Product.id == movement.product_id).first()
-    if not product: raise HTTPException(status_code=404, detail="Product not found")
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
 
     product.current_stock += movement.quantity_change
     db_log = models.InventoryLog(
@@ -356,7 +853,7 @@ def analyze_inventory(db: Session = Depends(database.get_db)):
     for p in products:
         status = "OK"
         rec = "Optimal"
-        if p.current_stock < p.safety_stock_level: 
+        if p.current_stock < p.safety_stock_level:
             status = "CRITICAL"
             rec = "Replenish immediately."
         elif p.current_stock < (p.safety_stock_level * 1.2):
@@ -365,11 +862,16 @@ def analyze_inventory(db: Session = Depends(database.get_db)):
         
         results.append({
             "id": p.id,
-            "product": p.name, "sku": p.sku, 
-            "on_hand": p.current_stock, "safety_stock": p.safety_stock_level, 
-            "optimal_stock": p.optimal_stock_level, "unit_price": p.unit_price, 
-            "category": p.category, "stage": p.stage, 
-            "status": status, "ai_recommendation": rec
+            "product": p.name,
+            "sku": p.sku,
+            "on_hand": p.current_stock,
+            "safety_stock": p.safety_stock_level,
+            "optimal_stock": p.optimal_stock_level,
+            "unit_price": p.unit_price,
+            "category": p.category,
+            "stage": p.stage,
+            "status": status,
+            "ai_recommendation": rec
         })
     return results
 
@@ -387,7 +889,7 @@ def create_order(order: OrderCreate, db: Session = Depends(database.get_db)):
 def read_orders(db: Session = Depends(database.get_db)):
     return db.query(models.Order).all()
 
-# --- FORECASTING, PROCUREMENT, LOGISTICS ---
+# --- FORECASTING, LOGISTICS ---
 
 @app.post("/forecast/upload")
 async def generate_forecast(category: str = Form(...), file: UploadFile = File(...)):
@@ -395,22 +897,28 @@ async def generate_forecast(category: str = Form(...), file: UploadFile = File(.
     df = pd.read_csv(io.BytesIO(contents))
     df = df.loc[:, ~df.columns.duplicated()]
 
-    if 'Date' not in df.columns: return {"error": "Missing 'Date' column."}
+    if 'Date' not in df.columns:
+        return {"error": "Missing 'Date' column."}
     df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    df = df.dropna(subset=['Date']) 
+    df = df.dropna(subset=['Date'])
 
-    if 'Category' in df.columns: df_filtered = df[df['Category'] == category].copy()
-    else: df_filtered = df.copy()
+    if 'Category' in df.columns:
+        df_filtered = df[df['Category'] == category].copy()
+    else:
+        df_filtered = df.copy()
 
-    if df_filtered.empty: return {"error": f"No data found for category: '{category}'"}
+    if df_filtered.empty:
+        return {"error": f"No data found for category: '{category}'"}
 
     if 'Total_Revenue' not in df_filtered.columns:
         if 'Quantity' in df_filtered.columns and 'Unit_Price' in df_filtered.columns:
             df_filtered['Total_Revenue'] = df_filtered['Quantity'] * df_filtered['Unit_Price']
-        else: return {"error": "Missing 'Total_Revenue' column."}
+        else:
+            return {"error": "Missing 'Total_Revenue' column."}
 
     df_monthly = df_filtered.set_index('Date').resample('ME')['Total_Revenue'].sum().reset_index()
-    if len(df_monthly) < 2: return {"error": "Not enough data."}
+    if len(df_monthly) < 2:
+        return {"error": "Not enough data."}
          
     start_val = float(df_monthly['Total_Revenue'].iloc[0])
     end_val = float(df_monthly['Total_Revenue'].iloc[-1])
@@ -419,14 +927,15 @@ async def generate_forecast(category: str = Form(...), file: UploadFile = File(.
     try:
         ai_response_str = analyze_market_factors_with_groq(category, trend_pct)
         ai_data = json.loads(ai_response_str)
-    except: ai_data = {"ai_adjustment_factor": 1.0, "insight_text": "Unavailable", "external_factors": []}
+    except:
+        ai_data = {"ai_adjustment_factor": 1.0, "insight_text": "Unavailable", "external_factors": []}
         
     adjustment = ai_data.get("ai_adjustment_factor", 1.0)
     last_date = df_monthly['Date'].iloc[-1]
     last_val = end_val
     forecast_points = []
     
-    for i in range(1, 7): 
+    for i in range(1, 7):
         next_date = last_date + pd.DateOffset(months=i)
         next_val = last_val * (1 + (trend_pct / 100 / 12)) * adjustment
         forecast_points.append({"Date": next_date.strftime("%Y-%m-%d"), "Sales": int(next_val), "Type": "Forecast"})
@@ -437,8 +946,10 @@ async def generate_forecast(category: str = Form(...), file: UploadFile = File(.
         history_points.append({"Date": row['Date'].strftime("%Y-%m-%d"), "Sales": int(row['Total_Revenue']), "Type": "Historical"})
 
     return {
-        "category": category, "historical_trend": trend_pct,
-        "ai_insight": ai_data.get("insight_text"), "external_factors": ai_data.get("external_factors"),
+        "category": category,
+        "historical_trend": trend_pct,
+        "ai_insight": ai_data.get("insight_text"),
+        "external_factors": ai_data.get("external_factors"),
         "chart_data": history_points + forecast_points
     }
 
@@ -450,7 +961,8 @@ def recommend_supplier(request: ProcurementRequest):
 def plan_route(request: RouteRequest):
     start_lat, start_lon = get_coordinates(request.start_address)
     end_lat, end_lon = get_coordinates(request.end_address)
-    if not start_lat: raise HTTPException(400, "Invalid Address")
+    if not start_lat:
+        raise HTTPException(400, "Invalid Address")
     
     route_data = get_route_data((start_lat, start_lon), (end_lat, end_lon))
     return {
