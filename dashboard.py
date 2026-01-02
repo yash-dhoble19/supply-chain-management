@@ -80,8 +80,16 @@ st.markdown("""
     .recommendation-card:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,0,0,.12); }
     .urgency-badge { padding: 6px 12px; border-radius: 14px; font-weight: 700; font-size: .85em; display: inline-block; }
 
-    .supplier-card, .po-card { background: var(--card); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); }
-    .po-card { border-left: 6px solid var(--primary); }
+    .supplier-card, .po-card { background: var(--card); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); transition: transform .18s ease, box-shadow .18s ease; }
+    .po-card { border: 1px solid #e5e7eb; border-left: 6px solid var(--primary); }
+    .po-card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,.12); }
+    .po-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+    .po-title { font-weight: 800; font-size: 1.05em; margin:0 0 4px 0; color: #0f172a; letter-spacing:.3px; }
+    .po-meta { color: var(--muted); font-size:.95em; }
+    .po-status { padding: 6px 10px; border-radius: 12px; color: #fff; font-weight: 700; font-size:.8em; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+    .priority-pill { padding: 6px 10px; border-radius: 12px; font-weight: 700; font-size:.8em; background:#f9fafb; color:#111827; border: 1px solid #e5e7eb; }
+    .progress-caption { margin-top: 6px; color:#6b7280; font-size:.85em; }
+
     .status-badge { padding: 6px 12px; border-radius: 14px; color: #fff; font-weight: 700; font-size: .8em; }
 
     .supplier-card-modern { transition: all .25s ease; }
@@ -677,10 +685,10 @@ elif page == "Procurement Agent":
             
             # Dynamic color based on health
             if status == "HEALTHY":
-                gradient = "linear-gradient(135deg, #4CAF50 0%, #8BC34A 100%)"
+                gradient = "linear-gradient(135deg, #1a98a6 0%, #8BC34A 100%)"
                 status_emoji = "✅"
             elif status == "WARNING":
-                gradient = "linear-gradient(135deg, #FF9800 0%, #FFC107 100%)"
+                gradient = "linear-gradient(135deg,  #1a98a6 0%, #FFC107 100%)"
                 status_emoji = "⚠️"
             else:
                 gradient = "linear-gradient(135deg, #F44336 0%, #E91E63 100%)"
@@ -814,8 +822,8 @@ elif page == "Procurement Agent":
                                 )
                                 with col:
                                     st.markdown(f"""
-<div class="supplier-card supplier-card-modern">
-  <div style="display:flex; justify-content:space-between; align-items:center;">
+<div class="supplier-card supplier-card-modern" style="margin-bottom: 24px; margin-right: 24px;">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:30px;">
     <div>
       <h4 style="margin:0;">{s['name']}</h4>
       <span class="status-badge" style="background:{verdict_color};">{verdict_label}</span>
@@ -826,7 +834,7 @@ elif page == "Procurement Agent":
     </div>
   </div>
   <div style="margin:12px 0; color:#6b7280;">📦 {s['category']} • ⏱️ {s['delivery_speed_days']} days • 💰 ${s['price_per_unit']:.2f}/unit</div>
-  <div style="display:grid; grid-template-columns:1fr; gap:10px;">
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
     <div>
       <div style="display:flex; justify-content:space-between;"><span>Reliability</span><span>{s['reliability_score']}</span></div>
       <div style="background:#e5e7eb; height:8px; border-radius:6px;"><div style="width:{s['reliability_score']}%; background:#10b981; height:8px; border-radius:6px;"></div></div>
@@ -842,6 +850,44 @@ elif page == "Procurement Agent":
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+                                    # Sidebar edit form (global placement, cleaner UI)
+                                    with st.sidebar:
+                                        if st.session_state.get("selected_supplier_id") == s['id']:
+                                            st.subheader("Edit Supplier")
+                                            presets = st.session_state.get("edit_supplier_preset", {})
+                                            with st.form(f"edit_form_sidebar_{s['id']}"):
+                                                c1, c2 = st.columns(2)
+                                                with c1:
+                                                    new_email = st.text_input("Contact Email", value=str(presets.get('contact_email', '')))
+                                                    new_category = st.text_input("Category", value=str(presets.get('category', '')))
+                                                    new_price = st.number_input("Price per Unit ($)", min_value=0.0, value=float(presets.get('price_per_unit', 0.0)), step=0.1)
+                                                with c2:
+                                                    new_days = st.number_input("Delivery Speed (Days)", min_value=1, value=int(presets.get('delivery_speed_days', 5)))
+                                                    new_reliability = st.slider("Reliability Score", 0, 100, int(presets.get('reliability_score', 95)))
+                                                    new_delivery_cost = st.number_input("Delivery Cost ($)", min_value=0.0, value=float(presets.get('delivery_cost', 0.0)), step=0.1)
+                                                save = st.form_submit_button("💾 Save Changes", type="primary")
+                                                if save:
+                                                    payload = {
+                                                        "contact_email": new_email,
+                                                        "category": new_category,
+                                                        "price_per_unit": new_price,
+                                                        "delivery_speed_days": new_days,
+                                                        "reliability_score": new_reliability,
+                                                        "delivery_cost": new_delivery_cost,
+                                                    }
+                                                    try:
+                                                        upd_res = requests.put(f"{API_URL}/procurement/suppliers/{s['id']}", json=payload)
+                                                        if upd_res.status_code == 200:
+                                                            st.success("Supplier updated successfully")
+                                                            # Clear selection after save
+                                                            st.session_state["selected_supplier_id"] = None
+                                                            st.session_state["selected_supplier_name"] = None
+                                                            st.session_state["edit_supplier_preset"] = None
+                                                        else:
+                                                            st.error(upd_res.text)
+                                                    except Exception as e:
+                                                        st.error(f"Update error: {e}")
 
                     st.caption("Tip: Use Manage Suppliers to add or update entries.")
             else:
@@ -916,7 +962,89 @@ elif page == "Procurement Agent":
                             st.error("❌ Cannot connect to backend. Please ensure the API is running.")
                         except Exception as e:
                             st.error(f"❌ Connection Error: {e}")
-    
+
+    # Manage existing suppliers (clean controls, moved from cards)
+    st.subheader("Manage Existing Suppliers")
+    try:
+        sup_list_res = requests.get(f"{API_URL}/procurement/suppliers/analysis")
+        if sup_list_res.status_code == 200:
+            data = sup_list_res.json()
+            suppliers = []
+            if isinstance(data, list):
+                suppliers = data
+            elif isinstance(data, dict):
+                suppliers = data.get('suppliers') or data.get('items') or data.get('data') or []
+                if isinstance(suppliers, dict):
+                    suppliers = suppliers.get('items', [])
+            if suppliers:
+                names = [f"{s.get('name', 'Unnamed')} • {s.get('category','N/A')}" for s in suppliers if isinstance(s, dict)]
+                selected_idx = st.selectbox("Select supplier", options=list(range(len(suppliers))), format_func=lambda i: names[i] if i < len(names) else f"Supplier #{i}")
+                selected = suppliers[selected_idx]
+
+                supplier_id = selected.get('id') if isinstance(selected, dict) else None
+                supplier_name = (selected.get('name') if isinstance(selected, dict) else None) or "Supplier"
+
+                c1, c2, c3 = st.columns([1,1,2])
+                with c1:
+                    if st.button("✏️ Edit in Sidebar", type="primary"):
+                        if supplier_id is None:
+                            st.error("Missing supplier ID; cannot edit.")
+                        else:
+                            st.session_state["selected_supplier_id"] = supplier_id
+                            st.session_state["selected_supplier_name"] = supplier_name
+                            st.session_state["edit_supplier_preset"] = {
+                                "contact_email": str(selected.get('contact_email', '')),
+                                "category": str(selected.get('category', '')),
+                                "price_per_unit": float(selected.get('price_per_unit', 0.0)),
+                                "delivery_speed_days": int(selected.get('delivery_speed_days', 5)),
+                                "reliability_score": int(selected.get('reliability_score', 95)),
+                                "delivery_cost": float(selected.get('delivery_cost', 0.0)),
+                            }
+                            st.toast(f"Editing {supplier_name} in sidebar")
+                with c2:
+                    if st.button("🗑️ Delete", type="secondary"):
+                        if supplier_id is None:
+                            st.error("Missing supplier ID; cannot delete.")
+                        else:
+                            try:
+                                del_res = requests.delete(f"{API_URL}/procurement/suppliers/{supplier_id}")
+                                if del_res.status_code == 200:
+                                    st.success(f"Deleted supplier '{supplier_name}'")
+                                else:
+                                    err = del_res.json().get('detail', del_res.text)
+                                    st.error(f"Delete failed: {err}")
+                            except Exception as e:
+                                st.error(f"Delete error: {e}")
+                with c3:
+                    if st.button("🧠 AI Negotiation Email", type="secondary"):
+                        if supplier_id is None:
+                            st.error("Missing supplier ID; cannot generate.")
+                        else:
+                            try:
+                                gen_res = requests.post(f"{API_URL}/procurement/suppliers/{supplier_id}/negotiation_email")
+                                if gen_res.status_code == 200:
+                                    email = gen_res.json().get('email', '')
+                                    safe_name = supplier_name.replace(' ', '_')
+                                    with st.expander(f"AI Draft for {supplier_name}", expanded=True):
+                                        st.code(email)
+                                        st.download_button(
+                                            label="⬇️ Download Draft",
+                                            data=email,
+                                            file_name=f"negotiation_{safe_name}.txt",
+                                            mime="text/plain"
+                                        )
+                                else:
+                                    st.error(gen_res.text)
+                            except Exception as e:
+                                st.error(f"Generation error: {e}")
+
+            else:
+                st.caption("No suppliers yet. Use Add Supplier above.")
+        else:
+            st.error(sup_list_res.text)
+    except Exception as e:
+        st.error(f"❌ Connection Error: {e}")
+
     st.divider()
     
     # === 4. PURCHASE ORDER MANAGEMENT ===
@@ -963,11 +1091,11 @@ elif page == "Procurement Agent":
                             <div class="po-card">
                               <div class="po-header">
                                 <div>
-                                  <div class="po-title">{po['po_number']} {status_info['icon']} {po['status']}</div>
+                                  <div class="po-title">{po['po_number']}</div>
                                   <div class="po-meta">{po['product_name']} • {po['supplier_name']}</div>
                                 </div>
                                 <div style="display:flex; gap:8px; align-items:center;">
-                                  <span class="po-status" style="background:{status_info['color']}">{po['status']}</span>
+                                  <span class="po-status" style="background:{status_info['color']}">{status_info['icon']} {po['status']}</span>
                                   <span class="priority-pill">{priority_emoji} {po['priority']}</span>
                                 </div>
                               </div>
