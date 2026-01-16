@@ -1,0 +1,148 @@
+[
+  {
+    "timestamp": "2026-01-16 21:52:18",
+    "category": "Laptop",
+    "horizon": 1,
+    "data_months": 13,
+    "forecasted_units": 1581036,
+    "result": {
+      "forecasted_units": 1581036,
+      "total_horizon_units": 1581036,
+      "forecast_horizon_months": 1,
+      "mom_change_percent": 909.24,
+      "yoy_change_percent": 9110.0,
+      "trend": "Strong Up",
+      "confidence": "Medium",
+      "data_months": 13,
+      "historical_avg": 173561.32,
+      "historical_std": 82738.26,
+      "coefficient_of_variation": 47.7,
+      "last_actual_units": 156656,
+      "seasonality": {
+        "yearly_seasonality_strength": 0.0,
+        "holiday_impact_strength": 0.0,
+        "seasonality_detected": false,
+        "interpretation": "No significant seasonal pattern detected",
+        "holidays_enabled": true
+      },
+      "lower_bound": 1581015,
+      "upper_bound": 1581053,
+      "confidence_interval_width": 38,
+      "data_quality": "medium",
+      "data_quality_label": "Medium",
+      "data_quality_message": "You have adequate data for forecasting. 18+ months recommended for better accuracy.",
+      "model_config": {
+        "yearly_seasonality_enabled": true,
+        "holidays_enabled": true,
+        "seasonality_mode": "multiplicative"
+      },
+      "warnings": [
+        "Limited data for robust yearly seasonality detection",
+        "Price increase may reduce actual demand below forecast"
+      ],
+      "recommendations": [
+        "Collect 18-24 months of data for more reliable seasonal forecasting",
+        "No strong seasonal patterns detected - demand appears relatively stable throughout the year"
+      ],
+      "history_data": [
+        {
+          "Date": "2023-09-01",
+          "Actual_Units": 17166.52
+        },
+        {
+          "Date": "2023-10-01",
+          "Actual_Units": 77481.31999999999
+        },
+        {
+          "Date": "2023-11-01",
+          "Actual_Units": 75165.62999999999
+        },
+        {
+          "Date": "2023-12-01",
+          "Actual_Units": 72377.76
+        },
+        {
+          "Date": "2024-01-01",
+          "Actual_Units": 243493.76
+        },
+        {
+          "Date": "2024-02-01",
+          "Actual_Units": 220944.36000000002
+        },
+        {
+          "Date": "2024-03-01",
+          "Actual_Units": 226926.76
+        },
+        {
+          "Date": "2024-04-01",
+          "Actual_Units": 228788.44
+        },
+        {
+          "Date": "2024-05-01",
+          "Actual_Units": 242528.44
+        },
+        {
+          "Date": "2024-06-01",
+          "Actual_Units": 240499.64
+        },
+        {
+          "Date": "2024-07-01",
+          "Actual_Units": 238093.36000000002
+        },
+        {
+          "Date": "2024-08-01",
+          "Actual_Units": 216175.04
+        },
+        {
+          "Date": "2024-09-01",
+          "Actual_Units": 156656.08000000002
+        }
+      ],
+      "forecast_data": [
+        {
+          "Date": "2024-10-01",
+          "Forecasted_Units": 1581036,
+          "Lower_Bound": 1581015,
+          "Upper_Bound": 1581053
+        }
+      ],
+      "ai_insight": "The forecast for Laptop in October 2024 shows demand at 1,581,036 units, up 909.2% from the previous month. The upward trend aligns with Navratri, which historically boosts Laptop sales in India through increased gifting and household purchases. With 13 months of historical data, the forecast carries medium confidence. The narrow range (1,581,015 to 1,581,053 units, \u00b10%) indicates high model certainty based on stable historical patterns.\n\nSeveral factors influence this forecast: upcoming festivals (Navratri, Dussehra) drive cultural purchasing behavior; planned promotional activities expected to boost demand through price incentives; active marketing initiatives expanding brand awareness. \n\nThe planned price increase may reduce volume as price-sensitive customers seek alternatives. High demand volatility (CV: 47.7%) creates additional forecast uncertainty.\n\nRecommended inventory target is 2,086,967 units, which includes a 32% buffer above the base forecast to account for high demand variability (CV 47.7%) and festival-driven demand surges. Position this inventory at least 3 weeks before Navratri to ensure availability during peak demand. Implement weekly sales monitoring to track actual performance against forecast and enable rapid inventory adjustments in response to demand signals.\n\n**Context:** Festivals: Navratri | Factors: Promotion",
+      "data_summary": {
+        "num_months": 13,
+        "total_units": 2256297,
+        "avg_monthly_units": 173561.32,
+        "min_monthly_units": 17166,
+        "max_monthly_units": 243493,
+        "std_monthly_units": 82738.26,
+        "date_range_start": "2023-09-01",
+        "date_range_end": "2024-09-01"
+      },
+      "forecast_month": "October 2024",
+      "festivals": [
+        "Navratri (September/October)",
+        "Dussehra (September/October)",
+        "Durga Puja (September/October)",
+        "Diwali (October/November)"
+      ],
+      "external_factors": [
+        "Upcoming promotion planned",
+        "Active marketing campaign",
+        "Price change: Increase",
+        "Regulatory changes expected"
+      ],
+      "region": "India",
+      "country": "IN"
+    },
+    "external_factors": {
+      "upcoming_promotion": true,
+      "marketing_campaign": true,
+      "new_product_launch": false,
+      "availability_issues": false,
+      "price_change": "Increase",
+      "supply_chain_disruption": false,
+      "regulatory_changes": true,
+      "logistics_constraints": false,
+      "economic_uncertainty": "None"
+    }
+  }
+]

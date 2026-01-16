@@ -8,7 +8,7 @@
 import pandas as pd
 from prophet import Prophet
 from typing import Optional
-from .config import settings, get_data_quality_tier
+from config import settings, get_data_quality_tier
 
 
 class DemandProphetModel:

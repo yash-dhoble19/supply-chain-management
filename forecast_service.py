@@ -6,8 +6,8 @@
 # - Calculate comprehensive metrics
 
 import pandas as pd
-from .prophet_model import DemandProphetModel
-from .config import settings, get_data_quality_tier
+from prophet_model import DemandProphetModel
+from config import settings, get_data_quality_tier
 
 
 def calculate_trend(mom_change: float) -> str:
