@@ -292,14 +292,23 @@ def generate_ai_morning_briefing(health_score, critical_count, pending_pos, db: 
     critical_products = [p.name for p in products if p.current_stock < (p.optimal_stock_level * 0.2)][:3]
     
     prompt = f"""
-    You are a Supply Chain Director AI. Generate a concise morning briefing (3-4 sentences).
+    You are a Supply Chain Director AI. Generate a comprehensive morning briefing (detailed analysic and one paragraph ).
     
     Data:
     - Health Score: {health_score}/100
     - Critical Items: {critical_count} (Examples: {', '.join(critical_products) if critical_products else 'None'})
     - Pending POs: {pending_pos}
     
-    Tone: Professional, actionable, and strategic. Highlight the most urgent concern first.
+    Requirements:
+    - Provide a detailed analysis (need  one paragraph explaintion)
+    - Include executive summary
+    - Discuss health score implications
+    - Analyze critical items and their impact
+    - Review pending POs and their urgency
+    - Provide actionable recommendations
+    - Include strategic insights for the day
+    
+    Tone: Professional, actionable, and strategic. Highlight the most urgent concern first, then provide comprehensive analysis.
     """
     
     try:
@@ -309,7 +318,7 @@ def generate_ai_morning_briefing(health_score, critical_count, pending_pos, db: 
         )
         return response.choices[0].message.content
     except:
-        return "Market conditions are stable. Review critical items and expedite pending orders."
+        return "Market conditions are stable. Review critical items and expedite pending orders. Health score indicates attention needed in supply chain operations. Prioritize addressing critical inventory levels and monitor pending purchase orders closely."
 
 def generate_urgency_reasoning(product, supplier):
     """
