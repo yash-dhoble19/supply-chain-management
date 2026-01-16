@@ -1,16 +1,21 @@
+# Your existing dependencies
 fastapi
 uvicorn
 sqlalchemy
-psycopg2-binary
-python-dotenv
-openai
-pandas
-requests
 pydantic
+python-dotenv
+pandas
 geopy
-polyline
-python-multipart
+requests
+
+# Friend's forecast dependencies
+prophet
+google-generativeai
+pydantic-settings
+plotly
+
+# Shared Streamlit dependencies
 streamlit
 streamlit-folium
-plotly
 folium
+polyline

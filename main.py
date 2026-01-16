@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
-from openai import OpenAI
+import google.generativeai as genai
 import models, database
 import pandas as pd
 import io
@@ -15,12 +15,9 @@ import requests
 
 # --- 1. CONFIGURATION & SETUP ---
 load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-client = OpenAI(
-    api_key=GROQ_API_KEY, 
-    base_url="https://api.groq.com/openai/v1"
-)
+genai.configure(api_key=GEMINI_API_KEY)
 
 # Initialize Database
 models.Base.metadata.create_all(bind=database.engine)
@@ -129,29 +126,27 @@ class RouteRequest(BaseModel):
 
 def analyze_order_with_groq(address):
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": "Risk Manager. Mark HIGH/LOW RISK."}, {"role": "user", "content": address}]
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(
+            f"Risk Manager. Mark HIGH/LOW RISK.\n\n{address}"
         )
-        return response.choices[0].message.content
+        return response.text
     except: return "AI Error"
 
 def compare_suppliers_with_groq(material, max_days):
     try:
         prompt = f"Buy {material} in {max_days} days. Pick best supplier."
-        response = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}])
-        return response.choices[0].message.content
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        return response.text
     except: return "AI Error"
 
 def analyze_market_factors_with_groq(category, trend):
-    prompt = f"Category: {category}. Trend: {trend}%. Output JSON with ai_adjustment_factor, insight_text, external_factors."
+    prompt = f"Category: {category}. Trend: {trend}%. Output JSON with ai_adjustment_factor, insight_text, external_factors. Respond with JSON only."
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": "Output JSON only."}, {"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
-        )
-        return response.choices[0].message.content
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        return response.text
     except: return '{"ai_adjustment_factor": 1.0}'
 
 def get_coordinates(address):
@@ -282,11 +277,9 @@ def generate_ai_morning_briefing(health_score, critical_count, pending_pos, db: 
     """
     
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        return response.text
     except:
         return "Market conditions are stable. Review critical items and expedite pending orders."
 
@@ -307,11 +300,9 @@ def generate_urgency_reasoning(product, supplier):
     """
     
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        return response.text
     except:
         return f"Stock critically low at {stock_pct:.0f}%. Immediate replenishment required."
 
@@ -672,12 +663,10 @@ def draft_negotiation_email(req: ReorderRequest):
     """
     
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}]
-        )
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
         return {
-            "email_draft": response.choices[0].message.content,
+            "email_draft": response.text,
             "recommended_qty": needed,
             "estimated_cost": round(cost, 2)
         }
@@ -734,15 +723,13 @@ def generate_supplier_negotiation_email(supplier_id: int, db: Session = Depends(
     """
     
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "You are a professional procurement manager writing strategic supplier emails."},
-                {"role": "user", "content": prompt}
-            ]
-        )
+        system_prompt = "You are a professional procurement manager writing strategic supplier emails."
+        full_prompt = f"{system_prompt}\n\n{prompt}"
         
-        email_content = response.choices[0].message.content
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(full_prompt)
+        
+        email_content = response.text
         
         return {
             "email": email_content,
@@ -774,7 +761,7 @@ def analyze_pricing_strategy(req: PricingRequest):
     2. IF Ratio < 0.3: RAISE price
     3. ELSE: HOLD price
     
-    OUTPUT JSON:
+    OUTPUT JSON only (no other text):
     {{
         "new_price": float,
         "action": "RAISE/LOWER/HOLD",
@@ -783,15 +770,9 @@ def analyze_pricing_strategy(req: PricingRequest):
     }}
     """
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "Output strict JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"}
-        )
-        return json.loads(response.choices[0].message.content)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        return json.loads(response.text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Pricing Failed: {str(e)}")
 
@@ -817,23 +798,17 @@ def parse_product_info(request: AIProductParseRequest):
     """
     try:
         # Check if API key is configured
-        if not GROQ_API_KEY:
+        if not GEMINI_API_KEY:
             raise HTTPException(
                 status_code=500, 
-                detail="GROQ_API_KEY not configured. Check your .env file."
+                detail="GEMINI_API_KEY not configured. Check your .env file."
             )
         
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": "Output JSON only."},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"}
-        )
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
         
         # Parse the JSON response
-        result = json.loads(response.choices[0].message.content)
+        result = json.loads(response.text)
         return result
         
     except json.JSONDecodeError as e:
@@ -858,11 +833,9 @@ def audit_inventory(req: InventoryReportRequest):
     Write Strategic Report (Markdown): Executive Summary, Risks, Recommendations.
     """
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return {"report": response.choices[0].message.content}
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        return {"report": response.text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Audit Failed: {str(e)}")
 
@@ -871,15 +844,12 @@ def simulate_scenario(req: SimulationRequest):
     context = "\n".join([f"- {p['product']}: Stock {p['on_hand']}" for p in req.products])
     prompt = f"""
     Risk Analyst. Inventory: {context}. Scenario: "{req.scenario}"
-    Output JSON: impact_score, impact_summary, affected_products, recommendation.
+    Output JSON only (no other text): impact_score, impact_summary, affected_products, recommendation.
     """
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": "JSON only."}, {"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
-        )
-        return json.loads(response.choices[0].message.content)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        return json.loads(response.text)
     except Exception as e:
         raise HTTPException(500, str(e))
 

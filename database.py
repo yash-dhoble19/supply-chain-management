@@ -9,16 +9,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Use DATABASE_URL from environment; fallback to local SQLite for dev
+# REPLACE THE HARDCODED URL WITH THIS:
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+# ⚠️ REPLACE 'password' with your actual PostgreSQL password
+# Format: postgresql://username:password@localhost/dbname
+SQLALCHEMY_DATABASE_URL = "postgresql://postgres:yash123@localhost/supply_chain_db"
 
-if not SQLALCHEMY_DATABASE_URL:
-    # Dev-friendly fallback if DATABASE_URL is not set
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./supply_chain.db"
-    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-else:
-    engine = create_engine(SQLALCHEMY_DATABASE_URL)
-
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
