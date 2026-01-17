@@ -14,12 +14,14 @@ import traceback
 from dotenv import load_dotenv
 from geopy.geocoders import Nominatim
 import requests
+import re
 
 from data_preparation import prepare_category_data, get_data_summary
 from forecast_service import run_demand_forecast
 from ai_insight_service import generate_ai_insight
 from evaluation import evaluate_forecast_accuracy, get_model_diagnostics
 from config import settings, get_festivals_for_month, validate_forecast_horizon
+from ai_agent import SupplyChainAgent
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -146,6 +148,10 @@ class RouteRequest(BaseModel):
     start_address: str
     end_address: str
 
+class AgentRouteRequest(BaseModel):
+    intent: str
+    payload: dict
+
 # --- 3. HELPER FUNCTIONS ---
 
 def analyze_order_with_groq(address):
@@ -202,6 +208,42 @@ def get_route_data(start_coords, end_coords):
         return None
     except:
         return None
+
+def parse_product_info_local(description: str):
+    text = description.lower()
+    name = description.strip()
+    category = "Raw Material"
+    if "finished good" in text or "finished" in text:
+        category = "Finished Good"
+    elif "packaging" in text:
+        category = "Packaging"
+    elif "component" in text:
+        category = "Component"
+    stage = category
+    stock = 0
+    m = re.search(r"(?:stock|qty|quantity|units|pcs)[:\\s]*([0-9]+)", text)
+    if m:
+        stock = int(m.group(1))
+    price = 0.0
+    m = re.search(r"(?:rs\\.?|inr|\\$)\\s*([0-9]+(?:\\.[0-9]+)?)", text)
+    if m:
+        price = float(m.group(1))
+    else:
+        m = re.search(r"(?:price|cost)[:\\s]*([0-9]+(?:\\.[0-9]+)?)", text)
+        if m:
+            price = float(m.group(1))
+    optimal = stock if stock > 0 else 100
+    optimal = int(max(optimal, round(optimal * 1.2)))
+    safety = int(round(optimal * 0.2))
+    return {
+        "name": name,
+        "category": category,
+        "stage": stage,
+        "current_stock": stock,
+        "unit_price": price,
+        "optimal_stock_level": optimal,
+        "safety_stock_level": safety
+    }
 
 # --- NEW: PROCUREMENT-SPECIFIC HELPER FUNCTIONS ---
 
@@ -842,12 +884,8 @@ def parse_product_info(request: AIProductParseRequest):
     }}
     """
     try:
-        # Check if API key is configured
         if not GROQ_API_KEY:
-            raise HTTPException(
-                status_code=500, 
-                detail="GROQ_API_KEY not configured. Check your .env file."
-            )
+            return parse_product_info_local(request.description)
         
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -863,17 +901,10 @@ def parse_product_info(request: AIProductParseRequest):
         return result
         
     except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"AI returned invalid JSON: {str(e)}"
-        )
+        return parse_product_info_local(request.description)
     except Exception as e:
-        # Log the full error for debugging
         traceback.print_exc()
-        raise HTTPException(
-            status_code=500, 
-            detail=f"AI Parse Failed: {str(e)}"
-        )
+        return parse_product_info_local(request.description)
 
 @app.post("/ai/audit_inventory")
 def audit_inventory(req: InventoryReportRequest):
@@ -911,6 +942,10 @@ def simulate_scenario(req: SimulationRequest):
 @app.post("/ai/generate_reorder_email")
 def generate_reorder_email(req: ReorderRequest):
     return draft_negotiation_email(req)
+
+@app.post("/ai/agent/route")
+def agent_route(req: AgentRouteRequest):
+    return SupplyChainAgent.route(req.intent, req.payload)
 
 # --- INVENTORY CRUD ---
 

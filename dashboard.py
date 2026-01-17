@@ -282,41 +282,413 @@ def update_po_status(po_id, new_status):
 # PAGE 1: DASHBOARD OVERVIEW
 # ==========================================
 if page == "Dashboard":
-    st.title("📊 Control Tower Overview")
+    # Professional Dashboard Header
+    st.markdown("""
+    <div style="background: #1e3a8a; 
+                color: white; padding: 24px 32px; border-radius: 12px; 
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 24px;">
+        <h1 style="margin: 0; font-size: 2em; font-weight: 700; letter-spacing: -0.5px;">Control Tower Overview</h1>
+        <p style="margin: 8px 0 0 0; font-size: 0.95em; opacity: 0.85; font-weight: 400;">Real-time supply chain intelligence and analytics</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    inventory_data, orders_data = [], []
+    # Fetch all data
+    inventory_data, orders_data, pos_data, health_data = [], [], [], {}
     try:
         inv_res = requests.get(f"{API_URL}/inventory/analysis")
         if inv_res.status_code == 200: inventory_data = inv_res.json()
+        
         ord_res = requests.get(f"{API_URL}/orders/")
         if ord_res.status_code == 200: orders_data = ord_res.json()
+        
+        po_res = requests.get(f"{API_URL}/procurement/po/list")
+        if po_res.status_code == 200: pos_data = po_res.json()
+        
+        health_res = requests.get(f"{API_URL}/procurement/health")
+        if health_res.status_code == 200: health_data = health_res.json()
     except:
         st.error("⚠️ Backend Offline. Please run 'python -m uvicorn main:app --reload'")
 
-    c1, c2, c3, c4 = st.columns(4)
+    # Calculate metrics
     crit_stock = len([x for x in inventory_data if x.get('status') == 'CRITICAL'])
+    low_stock = len([x for x in inventory_data if x.get('status') == 'LOW'])
+    active_pos = len([x for x in pos_data if x.get('status') in ['DRAFT', 'APPROVED', 'IN_TRANSIT']])
+    total_value = sum([x.get('on_hand', 0) * x.get('unit_price', 0) for x in inventory_data])
+    health_score = health_data.get('health_score', 0)
     
-    c1.metric("📦 Total SKUs", len(inventory_data))
-    c2.metric("🚨 Critical Stock", crit_stock, delta="-Alert", delta_color="inverse")
-    c3.metric("⚠️ High Risk Orders", 2, delta="-Review", delta_color="inverse") 
-    c4.metric("🚛 Active POs", 1) 
+    # Professional Metrics Styling
+    st.markdown("""
+    <style>
+    .metric-card {
+        background: #ffffff;
+        padding: 20px 18px;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+        border-left: 4px solid;
+        transition: box-shadow 0.2s ease;
+        margin-bottom: 0;
+    }
+    .metric-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .metric-value {
+        font-size: 2em;
+        font-weight: 700;
+        margin: 8px 0 6px 0;
+        color: #111827;
+        line-height: 1.2;
+    }
+    .metric-label {
+        font-size: 0.8em;
+        color: #6b7280;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+    }
+    .metric-delta {
+        font-size: 0.75em;
+        margin-top: 8px;
+        padding: 3px 10px;
+        border-radius: 6px;
+        display: inline-block;
+        font-weight: 500;
+    }
+    .activity-item {
+        background: #ffffff;
+        padding: 12px 14px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        border: 1px solid #e5e7eb;
+        border-left: 3px solid;
+        transition: border-color 0.2s ease;
+    }
+    .activity-item:hover {
+        border-color: #d1d5db;
+    }
+    .activity-icon {
+        font-size: 1.2em;
+        margin-right: 10px;
+        display: inline-block;
+    }
+    .activity-time {
+        color: #9ca3af;
+        font-size: 0.75em;
+        float: right;
+        margin-top: 2px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Metrics Row with compact spacing
+    col1, col2, col3, col4, col5 = st.columns(5, gap="medium")
+    
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card" style="border-left-color: #1e40af;">
+            <div class="metric-label">Total SKUs</div>
+            <div class="metric-value">{len(inventory_data)}</div>
+            <div class="metric-delta" style="background: #eff6ff; color: #1e40af;">Active Products</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card" style="border-left-color: #dc2626;">
+            <div class="metric-label">Critical Stock</div>
+            <div class="metric-value">{crit_stock}</div>
+            <div class="metric-delta" style="background: #fef2f2; color: #991b1b;">Requires Attention</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown(f"""
+        <div class="metric-card" style="border-left-color: #d97706;">
+            <div class="metric-label">Low Stock</div>
+            <div class="metric-value">{low_stock}</div>
+            <div class="metric-delta" style="background: #fffbeb; color: #92400e;">Monitor Closely</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        st.markdown(f"""
+        <div class="metric-card" style="border-left-color: #059669;">
+            <div class="metric-label">Active POs</div>
+            <div class="metric-value">{active_pos}</div>
+            <div class="metric-delta" style="background: #f0fdf4; color: #065f46;">In Progress</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col5:
+        st.markdown(f"""
+        <div class="metric-card" style="border-left-color: #4b5563;">
+            <div class="metric-label">Total Value</div>
+            <div class="metric-value" style="font-size: 1.6em;">${total_value:,.0f}</div>
+            <div class="metric-delta" style="background: #f9fafb; color: #374151;">Inventory Worth</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Professional Health Score Card
+    if health_data:
+        health_score = health_data.get('health_score', 0)
+        status = health_data.get('status', 'UNKNOWN')
+        
+        if status == "HEALTHY":
+            health_bg = "#f0fdf4"
+            health_border = "#059669"
+            health_text = "#065f46"
+            status_badge = "#d1fae5"
+        elif status == "WARNING":
+            health_bg = "#fffbeb"
+            health_border = "#d97706"
+            health_text = "#92400e"
+            status_badge = "#fef3c7"
+        else:
+            health_bg = "#fef2f2"
+            health_border = "#dc2626"
+            health_text = "#991b1b"
+            status_badge = "#fee2e2"
+        
+        st.markdown(f"""
+        <div style="background: {health_bg}; border: 1px solid {health_border}; 
+                    padding: 24px 32px; border-radius: 8px; margin-bottom: 24px;
+                    border-left: 4px solid {health_border};">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 style="margin: 0 0 12px 0; font-size: 1em; font-weight: 600; color: #374151; 
+                               text-transform: uppercase; letter-spacing: 0.5px;">Supply Chain Health Score</h3>
+                    <div style="font-size: 3em; font-weight: 700; margin: 8px 0; color: {health_text}; line-height: 1;">
+                        {health_score:.1f}<span style="font-size: 0.4em; color: #6b7280; font-weight: 400;">/100</span>
+                    </div>
+                    <div style="background: {status_badge}; padding: 5px 14px; border-radius: 6px; 
+                                display: inline-block; font-weight: 600; font-size: 0.85em; color: {health_text}; margin-top: 10px;">
+                        {status}
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 2.2em; font-weight: 700; margin-bottom: 6px; color: #111827;">{health_data.get('critical_items_count', 0)}</div>
+                    <div style="color: #6b7280; font-size: 0.85em; font-weight: 500;">Critical Items</div>
+                    <div style="font-size: 2.2em; font-weight: 700; margin: 16px 0 6px 0; color: #111827;">{health_data.get('pending_pos', 0)}</div>
+                    <div style="color: #6b7280; font-size: 0.85em; font-weight: 500;">Pending POs</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    c_left, c_right = st.columns([2, 1])
-    with c_left:
-        st.subheader("🛑 Inventory Health")
+    # Main Content Layout with compact spacing
+    col_chart, col_activity = st.columns([2.5, 1], gap="medium")
+    
+    with col_chart:
+        st.markdown("""
+        <div style="background: #ffffff; border: 1px solid #e5e7eb; padding: 20px 24px; 
+                    border-radius: 8px; margin-bottom: 16px;">
+            <h2 style="margin: 0 0 16px 0; color: #111827; font-size: 1.1em; font-weight: 600; 
+                       text-transform: uppercase; letter-spacing: 0.5px;">Inventory Health Overview</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
         if inventory_data:
             df_inv = pd.DataFrame(inventory_data)
             if not df_inv.empty:
-                st.bar_chart(df_inv.set_index('product')['on_hand'], color="#FF4B4B")
+                # Enhanced bar chart
+                fig = go.Figure()
+                
+                # Professional colors based on status
+                colors = []
+                for status in df_inv.get('status', []):
+                    if status == 'CRITICAL':
+                        colors.append('#dc2626')
+                    elif status == 'LOW':
+                        colors.append('#d97706')
+                    else:
+                        colors.append('#059669')
+                
+                fig.add_trace(go.Bar(
+                    x=df_inv['product'],
+                    y=df_inv['on_hand'],
+                    marker_color=colors,
+                    text=df_inv['on_hand'],
+                    textposition='auto',
+                    hovertemplate='<b>%{x}</b><br>Stock: %{y}<extra></extra>'
+                ))
+                
+                fig.update_layout(
+                    height=340,
+                    plot_bgcolor='#ffffff',
+                    paper_bgcolor='#ffffff',
+                    xaxis_title="Products",
+                    yaxis_title="Stock Units",
+                    showlegend=False,
+                    margin=dict(l=50, r=20, t=20, b=70),
+                    xaxis=dict(
+                        tickangle=-45,
+                        gridcolor='#f3f4f6',
+                        title_font=dict(size=11, color='#374151'),
+                        tickfont=dict(size=9, color='#6b7280')
+                    ),
+                    yaxis=dict(
+                        gridcolor='#f3f4f6',
+                        title_font=dict(size=11, color='#374151'),
+                        tickfont=dict(size=9, color='#6b7280')
+                    )
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Status Summary with compact spacing
+                status_counts = df_inv['status'].value_counts().to_dict()
+                status_col1, status_col2, status_col3 = st.columns(3, gap="medium")
+                
+                with status_col1:
+                    st.metric("Healthy", status_counts.get('OK', 0), delta="Optimal")
+                with status_col2:
+                    st.metric("Low Stock", status_counts.get('LOW', 0), delta="Review Needed", delta_color="inverse")
+                with status_col3:
+                    st.metric("Critical", status_counts.get('CRITICAL', 0), delta="Action Required", delta_color="inverse")
+        else:
+            st.info("📦 No inventory data available")
     
-    with c_right:
-        st.subheader("Recent Activity")
+    with col_activity:
+        st.markdown("""
+        <div style="background: #ffffff; border: 1px solid #e5e7eb; padding: 20px 18px; 
+                    border-radius: 8px; margin-bottom: 16px;">
+            <h2 style="margin: 0 0 16px 0; color: #111827; font-size: 1.1em; font-weight: 600; 
+                       text-transform: uppercase; letter-spacing: 0.5px;">Recent Activity</h2>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Collect all recent activities
+        activities = []
+        
+        # Recent Orders
         if orders_data:
-            df_ord = pd.DataFrame(orders_data)
-            if not df_ord.empty:
-                st.dataframe(df_ord[['customer_name', 'status']], hide_index=True)
-            else:
-                st.info("No recent orders.")
+            for order in orders_data[:5]:
+                order_time = order.get('created_at', '')
+                if isinstance(order_time, str):
+                    try:
+                        order_dt = datetime.fromisoformat(order_time.replace('Z', '+00:00'))
+                        time_ago = (datetime.now(order_dt.tzinfo) - order_dt).total_seconds() / 60  # minutes
+                    except:
+                        time_ago = 0
+                else:
+                    time_ago = 0
+                
+                activities.append({
+                    'type': 'order',
+                    'icon': '📦',
+                    'title': f"New Order from {order.get('customer_name', 'Unknown')}",
+                    'description': f"Status: {order.get('status', 'PENDING')}",
+                    'time': f"{int(time_ago)}m ago" if time_ago < 60 else f"{int(time_ago/60)}h ago",
+                    'color': '#1e40af'
+                })
+        
+        # Recent Purchase Orders
+        if pos_data:
+            for po in sorted(pos_data, key=lambda x: x.get('created_at', ''), reverse=True)[:5]:
+                po_time = po.get('created_at', '')
+                if isinstance(po_time, str):
+                    try:
+                        po_dt = datetime.strptime(po_time, '%Y-%m-%d') if '-' in po_time else datetime.now()
+                        time_ago = (datetime.now() - po_dt).total_seconds() / 3600  # hours
+                    except:
+                        time_ago = 0
+                else:
+                    time_ago = 0
+                
+                status_emoji = {
+                    'DRAFT': '📝',
+                    'APPROVED': '✅',
+                    'IN_TRANSIT': '🚚',
+                    'RECEIVED': '📦'
+                }.get(po.get('status', 'DRAFT'), '📋')
+                
+                activities.append({
+                    'type': 'po',
+                    'icon': status_emoji,
+                    'title': f"{po.get('po_number', 'PO')} - {po.get('product_name', 'Product')}",
+                    'description': f"Qty: {po.get('quantity', 0)} • ${po.get('total_value', 0):,.2f}",
+                    'time': f"{int(time_ago)}h ago" if time_ago < 24 else f"{int(time_ago/24)}d ago",
+                    'color': '#059669' if po.get('status') == 'RECEIVED' else '#d97706'
+                })
+        
+        # Critical Inventory Alerts
+        if inventory_data:
+            critical_items = [x for x in inventory_data if x.get('status') == 'CRITICAL'][:3]
+            for item in critical_items:
+                activities.append({
+                    'type': 'alert',
+                    'icon': '🚨',
+                    'title': f"Critical: {item.get('product', 'Unknown')}",
+                    'description': f"Stock: {item.get('on_hand', 0)}/{item.get('optimal_stock', 0)}",
+                    'time': 'Now',
+                    'color': '#dc2626'
+                })
+        
+        # Sort activities by time (most recent first)
+        activities.sort(key=lambda x: x['time'])
+        activities = activities[:10]  # Show latest 10 activities
+        
+        if activities:
+            for activity in activities:
+                st.markdown(f"""
+                <div class="activity-item" style="border-left-color: {activity['color']};">
+                    <div style="display: flex; align-items: flex-start;">
+                        <span class="activity-icon">{activity['icon']}</span>
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-weight: 600; color: #111827; margin-bottom: 4px; font-size: 0.85em; line-height: 1.3;">
+                                {activity['title']}
+                            </div>
+                            <div style="color: #6b7280; font-size: 0.8em; line-height: 1.4;">
+                                {activity['description']}
+                            </div>
+                        </div>
+                        <span class="activity-time">{activity['time']}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div style="text-align: center; padding: 30px 20px; color: #9ca3af; border: 1px dashed #e5e7eb; border-radius: 8px;">
+                <div style="font-size: 2em; margin-bottom: 8px; opacity: 0.5;">📭</div>
+                <div style="font-size: 0.85em; font-weight: 500;">No recent activity</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Professional Quick Stats Row with compact spacing
+    col_stat1, col_stat2, col_stat3 = st.columns(3, gap="medium")
+    
+    with col_stat1:
+        st.markdown(f"""
+        <div style="background: #ffffff; border: 1px solid #e5e7eb; border-left: 4px solid #1e40af; 
+                    padding: 18px 20px; border-radius: 8px;">
+            <div style="font-size: 1.8em; font-weight: 700; margin-bottom: 6px; color: #111827;">{len(orders_data)}</div>
+            <div style="font-size: 0.8em; color: #6b7280; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;">Total Orders</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col_stat2:
+        avg_stock = sum([x.get('on_hand', 0) for x in inventory_data]) / len(inventory_data) if inventory_data else 0
+        st.markdown(f"""
+        <div style="background: #ffffff; border: 1px solid #e5e7eb; border-left: 4px solid #059669; 
+                    padding: 18px 20px; border-radius: 8px;">
+            <div style="font-size: 1.8em; font-weight: 700; margin-bottom: 6px; color: #111827;">{avg_stock:,.0f}</div>
+            <div style="font-size: 0.8em; color: #6b7280; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;">Avg Stock per SKU</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col_stat3:
+        completed_pos = len([x for x in pos_data if x.get('status') == 'RECEIVED'])
+        st.markdown(f"""
+        <div style="background: #ffffff; border: 1px solid #e5e7eb; border-left: 4px solid #4b5563; 
+                    padding: 18px 20px; border-radius: 8px;">
+            <div style="font-size: 1.8em; font-weight: 700; margin-bottom: 6px; color: #111827;">{completed_pos}</div>
+            <div style="font-size: 0.8em; color: #6b7280; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;">Completed POs</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ==========================================
 # PAGE 2: INVENTORY MANAGEMENT
@@ -433,9 +805,15 @@ elif page == "Inventory Management":
                         stage = c_b.selectbox("Stage", stages, index=stage_idx)
                         
                         stock = c_a.number_input("Current Stock", min_value=0, value=int(d['stock']))
-                        optimal = c_b.number_input("Optimal Level", min_value=1, value=int(d['opt']))
-                        safety = int(optimal * 0.2) 
-                        price = st.number_input("Unit Price ($)", min_value=0.0, value=float(d['price']))
+                        price = c_b.number_input("Unit Price ($)", min_value=0.01, value=float(d['price']), step=0.1)
+                        
+                        # Calculate optimal and safety based on stock
+                        optimal = max(1, stock if stock > 0 else 100) 
+                        optimal = max(1, int(max(optimal, round(optimal * 1.2))))
+                        safety = max(1, int(round(optimal * 0.2)))
+                        
+                        optimal = c_a.number_input("Optimal Stock", min_value=1, value=optimal)
+                        safety = c_b.number_input("Safety Stock", min_value=1, value=safety)
                         
                         if st.form_submit_button("💾 Save to Database"):
                             payload = {
@@ -452,6 +830,7 @@ elif page == "Inventory Management":
                                     st.rerun()
                                 else: st.error(f"Error: {res.text}")
                             except Exception as e: st.error(f"Connection Error: {e}")
+
 
              @st.dialog("Edit Product")
              def edit_form():
