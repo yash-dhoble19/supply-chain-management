@@ -147,6 +147,34 @@ class ReorderRequest(BaseModel):
 class RouteRequest(BaseModel):
     start_address: str
     end_address: str
+    waypoints: List[str] = []
+
+class CarrierCreate(BaseModel):
+    name: str
+    contact_info: Optional[str] = None
+    fleet_size: int = 1
+    rating: float = 4.5
+
+class DriverCreate(BaseModel):
+    name: str
+    license_number: str
+    status: str = "AVAILABLE"
+    carrier_id: int
+
+class ShipmentCreate(BaseModel):
+    tracking_number: str
+    origin: str
+    destination: str
+    carrier_id: Optional[int] = None
+    driver_id: Optional[int] = None
+    waypoints: List[str] = []
+    scheduled_date: Optional[str] = None # ISO format string
+
+class ShipmentUpdate(BaseModel):
+    status: Optional[str] = None
+    current_location_lat: Optional[float] = None
+    current_location_lon: Optional[float] = None
+    progress_percent: Optional[float] = None
 
 class AgentRouteRequest(BaseModel):
     intent: str
@@ -190,20 +218,32 @@ def get_coordinates(address):
     except Exception as e:
         return None, None
 
-def get_route_data(start_coords, end_coords):
-    start_str = f"{start_coords[1]},{start_coords[0]}"
-    end_str = f"{end_coords[1]},{end_coords[0]}"
-    url = f"http://router.project-osrm.org/route/v1/driving/{start_str};{end_str}?overview=full"
+def get_route_data(start_coords, end_coords, waypoint_coords=None):
+    # Construct coordinates string: start;way1;way2;...;end
+    coords = [start_coords]
+    if waypoint_coords:
+        coords.extend(waypoint_coords)
+    coords.append(end_coords)
+    
+    coord_str = ";".join([f"{c[1]},{c[0]}" for c in coords])
+    
+    url = f"http://router.project-osrm.org/route/v1/driving/{coord_str}?overview=full"
     
     try:
         response = requests.get(url)
         data = response.json()
         if data["code"] == "Ok":
             route = data["routes"][0]
+            
+            # Simple fuel estimation logic
+            distance_km = route["distance"] / 1000
+            estimated_fuel_cost = distance_km * 1.5  # Approx $1.5 per km
+            
             return {
-                "distance_km": round(route["distance"] / 1000, 2),
+                "distance_km": round(distance_km, 2),
                 "duration_min": round(route["duration"] / 60, 0),
-                "geometry": route["geometry"]
+                "geometry": route["geometry"],
+                "estimated_cost": round(estimated_fuel_cost, 2)
             }
         return None
     except:
@@ -1510,13 +1550,206 @@ def recommend_supplier(request: ProcurementRequest):
 def plan_route(request: RouteRequest):
     start_lat, start_lon = get_coordinates(request.start_address)
     end_lat, end_lon = get_coordinates(request.end_address)
-    if not start_lat:
-        raise HTTPException(400, "Invalid Address")
     
-    route_data = get_route_data((start_lat, start_lon), (end_lat, end_lon))
+    if not (start_lat and start_lon):
+        raise HTTPException(400, "Invalid Start Address")
+    if not (end_lat and end_lon):
+        raise HTTPException(400, "Invalid End Address")
+        
+    waypoint_coords = []
+    waypoint_names = []
+    if request.waypoints:
+        for wp in request.waypoints:
+            if wp.strip():
+                lat, lon = get_coordinates(wp)
+                if lat and lon:
+                    waypoint_coords.append((lat, lon))
+                    waypoint_names.append(wp)
+    
+    route_data = get_route_data((start_lat, start_lon), (end_lat, end_lon), waypoint_coords)
+    if not route_data:
+        raise HTTPException(500, "Could not calc route")
+        
+    # Enhanced Risk Analysis context
+    route_desc = f"from {request.start_address} to {request.end_address}"
+    if waypoint_names:
+        route_desc += f" via {', '.join(waypoint_names)}"
+    
+    # Inject metrics into the prompt to prevent hallucination
+    metrics_str = f"Calculated Distance: {route_data['distance_km']} km. Est. Duration: {route_data['duration_min']} mins."
+    
+    prompt = f"""
+    Route Consideration: {route_desc}.
+    {metrics_str}
+    
+    Task: Analyze logistics risks for this specific route.
+    1. Confirm the distance and duration in your response.
+    2. Identify key risks (traffic, road conditions, weather, safety).
+    3. Keep it concise.
+    """
+    
+    start_time = datetime.now()
+    risk_analysis = analyze_order_with_groq(prompt)
+    
     return {
         "start_coords": [start_lat, start_lon],
         "end_coords": [end_lat, end_lon],
+        "waypoints": waypoint_coords,
         "route_info": route_data,
-        "risk_analysis": analyze_order_with_groq(request.end_address)
+        "risk_analysis": risk_analysis
     }
+
+# --- EXTENDED LOGISTICS MANAGEMENT ---
+
+# 1. CARRIERS
+@app.post("/logistics/carriers/create")
+def create_carrier(carrier: CarrierCreate, db: Session = Depends(database.get_db)):
+    db_carrier = models.Carrier(**carrier.dict())
+    try:
+        db.add(db_carrier)
+        db.commit()
+        db.refresh(db_carrier)
+        return db_carrier
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(400, f"Error creating carrier: {str(e)}")
+
+@app.get("/logistics/carriers/list")
+def list_carriers(db: Session = Depends(database.get_db)):
+    return db.query(models.Carrier).all()
+
+# 2. DRIVERS
+@app.post("/logistics/drivers/create")
+def create_driver(driver: DriverCreate, db: Session = Depends(database.get_db)):
+    db_driver = models.Driver(**driver.dict())
+    try:
+        db.add(db_driver)
+        db.commit()
+        db.refresh(db_driver)
+        return db_driver
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(400, f"Error creating driver: {str(e)}")
+
+@app.get("/logistics/drivers/list")
+def list_drivers(carrier_id: Optional[int] = None, db: Session = Depends(database.get_db)):
+    q = db.query(models.Driver)
+    if carrier_id:
+        q = q.filter(models.Driver.carrier_id == carrier_id)
+    return q.all()
+
+# 3. SHIPMENTS
+@app.post("/logistics/shipments/create")
+def create_shipment(shipment: ShipmentCreate, db: Session = Depends(database.get_db)):
+    # 1. Calculate Route Geometry & Distance first
+    start_lat, start_lon = get_coordinates(shipment.origin)
+    end_lat, end_lon = get_coordinates(shipment.destination)
+    
+    if not (start_lat and start_lon and end_lat and end_lon):
+        raise HTTPException(400, "Invalid addresses")
+
+    waypoint_coords = []
+    if shipment.waypoints:
+        for wp in shipment.waypoints:
+             lat, lon = get_coordinates(wp)
+             if lat: waypoint_coords.append((lat, lon))
+
+    route_data = get_route_data((start_lat, start_lon), (end_lat, end_lon), waypoint_coords)
+    
+    # 2. Prepare DB Object
+    db_shipment = models.Shipment(
+        tracking_number=shipment.tracking_number,
+        origin=shipment.origin,
+        destination=shipment.destination,
+        waypoints=json.dumps(shipment.waypoints),
+        carrier_id=shipment.carrier_id,
+        driver_id=shipment.driver_id,
+        status="SCHEDULED",
+        origin_lat=start_lat,  # Store origin coordinates
+        origin_lon=start_lon,
+        origin_snapped=False,
+        current_location_lat=start_lat,
+        current_location_lon=start_lon,
+        progress_percent=0.0
+    )
+    
+    if route_data:
+        db_shipment.route_geometry = route_data['geometry']
+        db_shipment.total_distance_km = route_data['distance_km']
+        # Estimate ETA (Distance / 60km/h + buffer)
+        hours = route_data['duration_min'] / 60
+        db_shipment.eta = datetime.now() + timedelta(hours=hours)
+
+    if shipment.scheduled_date:
+        # Simple ISO parsing
+        try:
+            db_shipment.scheduled_date = datetime.fromisoformat(shipment.scheduled_date)
+        except: pass
+
+    try:
+        db.add(db_shipment)
+        db.commit()
+        db.refresh(db_shipment)
+        return db_shipment
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(400, f"Error creating shipment: {str(e)}")
+
+@app.get("/logistics/shipments/list")
+def list_shipments(db: Session = Depends(database.get_db)):
+    return db.query(models.Shipment).all()
+
+@app.post("/logistics/shipments/{id}/update")
+def update_shipment(id: int, update: ShipmentUpdate, db: Session = Depends(database.get_db)):
+    shipment = db.query(models.Shipment).filter(models.Shipment.id == id).first()
+    if not shipment:
+        raise HTTPException(404, "Shipment not found")
+    
+    # AUTO-CALCULATE PROGRESS if coordinates are updated
+    if update.current_location_lat and update.current_location_lon:
+        try:
+            from geopy.distance import geodesic
+            
+            # SNAP-TO-START LOGIC (Robust Version)
+            # If this is the FIRST coordinate update from the driver, snap the origin
+            if not shipment.origin_snapped:
+                # Update origin to the actual reported GPS location
+                shipment.origin_lat = update.current_location_lat
+                shipment.origin_lon = update.current_location_lon
+                shipment.origin_snapped = True
+                
+                # Recalculate and FIX Total Distance based on real starting point
+                # This ensures the denominator is correct for percentage
+                dest_lat, dest_lon = get_coordinates(shipment.destination)
+                if dest_lat:
+                    origin_point = (shipment.origin_lat, shipment.origin_lon)
+                    dest_point = (dest_lat, dest_lon)
+                    shipment.total_distance_km = geodesic(origin_point, dest_point).kilometers
+                
+                shipment.progress_percent = 0.0
+                print(f"✅ Snapped origin for {shipment.tracking_number} to {shipment.origin_lat}, {shipment.origin_lon}")
+            
+            else:
+                # Normal update: Calculate progress from snapped origin
+                origin_point = (shipment.origin_lat, shipment.origin_lon)
+                current_point = (update.current_location_lat, update.current_location_lon)
+                
+                # Get destination (hopefully cached or geocoded)
+                dest_lat, dest_lon = get_coordinates(shipment.destination)
+                if dest_lat and shipment.total_distance_km > 0:
+                    distance_traveled = geodesic(origin_point, current_point).kilometers
+                    progress = min(100.0, (distance_traveled / shipment.total_distance_km) * 100)
+                    shipment.progress_percent = round(progress, 2)
+                        
+        except Exception as e:
+            print(f"Progress calculation error: {e}")
+    
+    # Update Status (moved down to allow SNAP logic to check previous status)
+    if update.status: shipment.status = update.status
+    if update.current_location_lat: shipment.current_location_lat = update.current_location_lat
+    if update.current_location_lon: shipment.current_location_lon = update.current_location_lon
+    if update.progress_percent is not None: shipment.progress_percent = update.progress_percent
+    
+    db.commit()
+    return shipment
+

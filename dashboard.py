@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from streamlit_mic_recorder import speech_to_text 
 import json
 import os
+import streamlit.components.v1 as components
 import time
 # --- CONFIGURATION ---
 API_URL = "http://127.0.0.1:8000"
@@ -125,7 +126,7 @@ st.markdown("""
 
 # --- SIDEBAR ---
 st.sidebar.title("🏭 Expedition Co.")
-page = st.sidebar.radio("Navigate", ["Dashboard", "Inventory Management", "Demand Forecasting", "Procurement Agent", "Logistics Risk"])
+page = st.sidebar.radio("Navigate", ["Dashboard", "Inventory Management", "Demand Forecasting", "Procurement Agent", "Logistics Risk", "Logistics Optimize"])
 st.sidebar.markdown("---")
 st.sidebar.caption("System Status: 🟢 Online")
 
@@ -2688,13 +2689,13 @@ if page == "Procurement Agent":
                         can_receive = po['status'] == "IN_TRANSIT"
 
                         with col1:
-                            if st.button("✅ Approve", key=f"approve_{po['id']}", disabled=not can_approve, use_container_width=True, type="primary" if can_approve else "secondary"):
+                            if st.button("✅ Approve", key=f"approve_{po['id']}", disabled=not can_approve, width="stretch", type="primary" if can_approve else "secondary"):
                                 update_po_status(po['id'], "APPROVED")
                         with col2:
-                            if st.button("🚚 Transit", key=f"transit_{po['id']}", disabled=not can_transit, use_container_width=True, type="primary" if can_transit else "secondary"):
+                            if st.button("🚚 Transit", key=f"transit_{po['id']}", disabled=not can_transit, width="stretch", type="primary" if can_transit else "secondary"):
                                 update_po_status(po['id'], "IN_TRANSIT")
                         with col3:
-                            if st.button("📦 Receive", key=f"receive_{po['id']}", disabled=not can_receive, use_container_width=True, type="primary" if can_receive else "secondary"):
+                            if st.button("📦 Receive", key=f"receive_{po['id']}", disabled=not can_receive, width="stretch", type="primary" if can_receive else "secondary"):
                                 update_po_status(po['id'], "RECEIVED")
                         st.markdown("<br><br>", unsafe_allow_html=True)
             else:
@@ -2769,30 +2770,436 @@ if page == "Procurement Agent":
 # ==========================================
 if page == "Logistics Risk":
     st.title("🚛 Logistics Control Tower")
-    col_map, col_controls = st.columns([2, 1])
-
-    with col_controls:
-        start = st.text_input("Origin", "Mumbai, India")
-        end = st.text_input("Destination", "Kathmandu, Nepal")
-        if st.button("🗺️ Optimize Route"):
-            with st.spinner("Calculating..."):
-                try:
-                    res = requests.post(f"{API_URL}/logistics/plan_route", json={"start_address": start, "end_address": end})
-                    if res.status_code == 200: st.session_state['route_data'] = res.json()
-                except: st.error("Connection Error")
+    
+    # Tabs for new functionality
+    tab_active, tab_plan, tab_carriers = st.tabs(["📡 Active Shipments", "➕ Plan New Shipment", "🏢 Carrier Management"])
+    
+    # ==========================================
+    # TAB 1: ACTIVE SHIPMENTS & SATELLITE TRACKING
+    # ==========================================
+    # ==========================================
+    # TAB 1: ACTIVE SHIPMENTS & SATELLITE TRACKING
+    # ==========================================
+    with tab_active:
+        st.subheader("Live Shipment Tracking")
         
-        if 'route_data' in st.session_state:
-            d = st.session_state['route_data']
-            st.metric("Distance", f"{d['route_info']['distance_km']} km")
-            st.info(d['risk_analysis'])
+        try:
+            shipments = requests.get(f"{API_URL}/logistics/shipments/list").json()
+            if not shipments:
+                st.info("No active shipments found.")
+            else:
+                # 3-Column Layout for shipments list
+                cols = st.columns(3)
+                for idx, ship in enumerate(shipments):
+                    with cols[idx % 3]:
+                        with st.container(border=True):
+                            st.markdown(f"**#{ship['tracking_number']}**")
+                            st.caption(f"{ship['origin']} ➝ {ship['destination']}")
+                            st.progress(ship['progress_percent'] / 100)
+                            st.caption(f"Status: {ship['status']}")
+                            
+                            if st.button("🛰️ Track Live", key=f"track_{ship['id']}", width="stretch"):
+                                st.session_state['tracking_shipment'] = ship
+                                st.rerun()
 
-    with col_map:
-        if 'route_data' in st.session_state:
-            d = st.session_state['route_data']
-            m = folium.Map(location=[20, 78], zoom_start=5)
-            folium.PolyLine(polyline.decode(d['route_info']['geometry']), color="blue").add_to(m)
-            st_folium(m, width="100%", height=500)
-        else:
-            st_folium(folium.Map(location=[20, 78], zoom_start=5), width="100%", height=500)
-
+        except Exception as e:
+            st.error(f"Error loading shipments: {e}")
             
+        # SATELLITE COMMAND CENTER & DRIVER MODE
+        if 'tracking_shipment' in st.session_state:
+            s_initial = st.session_state['tracking_shipment']
+            
+            # RE-FETCH latest data to ensure coordinates are fresh
+            try:
+                # Find the specific shipment in the list (inefficient but safe for prototype)
+                fresh_shipments = requests.get(f"{API_URL}/logistics/shipments/list").json()
+                s = next((item for item in fresh_shipments if item["id"] == s_initial["id"]), s_initial)
+            except:
+                s = s_initial
+
+            st.divider()
+            st.markdown(f"### 🛰️ Live Operations: {s['tracking_number']}")
+            
+            # --- DRIVER MODE (SENDER) ---
+            with st.expander("🚚 Driver Controls (Click here if you are the Driver)", expanded=True):
+                st.info("Click 'Start Delivery' to begin broadcasting your GPS location to the control tower.")
+                
+                # JavaScript for Geolocation
+                # We use a unique key to prevent re-running on every refresh unless intended
+                start_gps = st.button("▶️ Start Delivery (Enable GPS Broadcast)", key=f"start_gps_{s['id']}")
+                stop_gps = st.button("⏹️ Stop Broadcast", key=f"stop_gps_{s['id']}")
+                
+                if start_gps:
+                    gps_js = f"""
+                    <script>
+                        if (navigator.geolocation) {{
+                            navigator.geolocation.watchPosition(function(position) {{
+                                var lat = position.coords.latitude;
+                                var lon = position.coords.longitude;
+                                
+                                // Send to Backend
+                                fetch('{API_URL}/logistics/shipments/{s['id']}/update', {{
+                                    method: 'POST',
+                                    headers: {{
+                                        'Content-Type': 'application/json',
+                                    }},
+                                    body: JSON.stringify({{
+                                        "current_location_lat": lat, 
+                                        "current_location_lon": lon,
+                                        "status": "IN_TRANSIT"
+                                    }})
+                                }});
+                                
+                                document.getElementById("gps_status").innerHTML = "✅ GPS Broadcasting: " + lat.toFixed(5) + ", " + lon.toFixed(5);
+                            }}, function(error) {{
+                                document.getElementById("gps_status").innerHTML = "❌ GPS Error: " + error.message;
+                            }}, {{
+                                enableHighAccuracy: true
+                            }});
+                        }} else {{
+                            document.getElementById("gps_status").innerHTML = "❌ Geolocation not supported.";
+                        }}
+                    </script>
+                    <div id="gps_status" style="font-weight:bold; color:green; padding:10px; border:1px solid #ddd; background:#f9f9f9;">
+                        ⏳ Requesting Location Permission...
+                    </div>
+                    """
+                    components.html(gps_js, height=80)
+                
+                if stop_gps:
+                    st.warning("Broadcast Stopped.")
+
+            # --- CONTROL TOWER MODE (VIEWER) ---
+            track_col1, track_col2 = st.columns([3, 1])
+            
+            with track_col1:
+                # Live Map Visualization
+                lat = s.get('current_location_lat')
+                lon = s.get('current_location_lon')
+                
+                if lat and lon:
+                    current_pos = [lat, lon]
+                    
+                    # Map Configuration - SATELLITE TILES (Google Maps Hybrid)
+                    m = folium.Map(
+                        location=current_pos,
+                        zoom_start=15,
+                        tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                        attr='Google'
+                    )
+                    
+                    # Draw Original Planned Route (if available) - FADED
+                    if s.get('route_geometry'):
+                        try:
+                            decoded_path = polyline.decode(s['route_geometry'])
+                            folium.PolyLine(decoded_path, color="#94a3b8", weight=3, opacity=0.3, dash_array="5,5").add_to(m)
+                        except: pass
+                    
+                    # Get DYNAMIC ROUTE from current location to destination
+                    try:
+                        # Get destination coordinates
+                        dest_coords = None
+                        if s.get('destination'):
+                            from geopy.geocoders import Nominatim
+                            geolocator = Nominatim(user_agent="scm_dashboard")
+                            location = geolocator.geocode(s['destination'])
+                            if location:
+                                dest_coords = (location.latitude, location.longitude)
+                        
+                        if dest_coords:
+                            # Call OSRM for dynamic route
+                            osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon},{lat};{dest_coords[1]},{dest_coords[0]}"
+                            osrm_params = {"overview": "full", "geometries": "polyline"}
+                            osrm_res = requests.get(osrm_url, params=osrm_params, timeout=5)
+                            
+                            if osrm_res.status_code == 200:
+                                route_data = osrm_res.json()
+                                if route_data.get('routes'):
+                                    remaining_geometry = route_data['routes'][0]['geometry']
+                                    remaining_path = polyline.decode(remaining_geometry)
+                                    # Draw REMAINING route in GREEN (bold)
+                                    folium.PolyLine(remaining_path, color="#10b981", weight=6, opacity=0.8).add_to(m)
+                                    
+                                    # Add destination marker
+                                    folium.Marker(
+                                        dest_coords,
+                                        popup=f"Destination: {s['destination']}",
+                                        icon=folium.Icon(color="blue", icon="flag-checkered", prefix="fa")
+                                    ).add_to(m)
+                    except Exception as e:
+                        st.caption(f"⚠️ Could not calculate dynamic route: {str(e)[:50]}")
+                    
+                    # Live Truck Marker
+                    folium.Marker(
+                        current_pos,
+                        popup=f"LIVE: {s['tracking_number']}",
+                        icon=folium.Icon(color="red", icon="truck", prefix="fa")
+                    ).add_to(m)
+                    
+                    # Render Map
+                    st_folium(m, width="100%", height=500, key=f"map_{s['id']}_{lat}_{lon}") # Key updates map on change
+                else:
+                    st.warning("⚠️ No GPS signal received yet. Driver must enable tracking.")
+
+            with track_col2:
+                st.markdown("**📡 Telemetry**")
+                st.metric("Status", s['status'])
+                
+                if lat and lon:
+                    st.caption(f"Lat: {lat:.5f}")
+                    st.caption(f"Lon: {lon:.5f}")
+                    st.success("Signal: Strong")
+                else:
+                    st.error("Signal: Offline")
+                
+                if st.button("🔄 Refresh Map"):
+                    st.rerun()
+                
+                st.caption("Auto-refresh not enabled to save resources. Click Refresh to see latest position.")
+
+
+    # ==========================================
+    # TAB 2: PLAN NEW SHIPMENT (Pre-Schedule Calculation)
+    # ==========================================
+    with tab_plan:
+        c1, c2 = st.columns([2, 1])
+        
+        with c1:
+            st.subheader("1️⃣ Route Details")
+            ref_num = st.text_input("Tracking/Reference #", f"TRK-{int(time.time())}")
+            
+            p_start = st.text_input("📍 Origin", "Mumbai, India", help="E.g. College Location")
+            
+            # Waypoints (Simplified for clarity, can add back dynamic if needed)
+            if "plan_waypoints" not in st.session_state: st.session_state.plan_waypoints = []
+            
+            p_end = st.text_input("🏁 Destination", "Pune, India", help="E.g. Home Location")
+
+            # 2. CALCULATION STEP
+            if st.button("🧮 Calculate Logistics", type="primary"):
+                with st.spinner("Analyzing Route..."):
+                    try:
+                        # Use existing plan_route API to get metrics
+                        payload = {
+                            "start_address": p_start,
+                            "end_address": p_end,
+                            "waypoints": []
+                        }
+                        res = requests.post(f"{API_URL}/logistics/plan_route", json=payload)
+                        if res.status_code == 200:
+                            data = res.json()
+                            st.session_state['planned_route_metrics'] = data
+                            st.success("Analysis Complete!")
+                        else:
+                            st.error(res.text)
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+        # METRICS PREVIEW
+        with c2:
+            st.subheader("2️⃣ Estimates")
+            if 'planned_route_metrics' in st.session_state:
+                m = st.session_state['planned_route_metrics']['route_info']
+                dist = m['distance_km']
+                dur = m['duration_min']
+                
+                # Custom Calculation: (Distance / 40) * 100
+                fuel_cost = (dist / 40) * 100
+                
+                st.metric("Total Distance", f"{dist} km")
+                st.metric("Est. Time", f"{int(dur // 60)}h {int(dur % 60)}m")
+                st.metric("Est. Fuel Cost", f"₹{fuel_cost:.2f}", help=f"({dist}km / 40km/l) * ₹100/l")
+                
+                st.divider()
+                
+                # Fetch Resources for Final Step
+                try:
+                    carriers = requests.get(f"{API_URL}/logistics/carriers/list").json() or []
+                    drivers = requests.get(f"{API_URL}/logistics/drivers/list").json() or []
+                    c_map = {c['name']: c['id'] for c in carriers}
+                    d_map = {d['name']: d['id'] for d in drivers}
+                    
+                    st.subheader("3️⃣ Schedule")
+                    s_c = st.selectbox("Carrier", list(c_map.keys()) if c_map else [])
+                    s_d = st.selectbox("Driver", list(d_map.keys()) if d_map else [])
+                    
+                    if st.button("📅 Confirm & Schedule", type="primary", width="stretch"):
+                        payload = {
+                            "tracking_number": ref_num,
+                            "origin": p_start,
+                            "destination": p_end,
+                            "carrier_id": c_map.get(s_c),
+                            "driver_id": d_map.get(s_d)
+                        }
+                        res = requests.post(f"{API_URL}/logistics/shipments/create", json=payload)
+                        if res.status_code == 200:
+                            st.success("✅ Scheduled!")
+                            time.sleep(1)
+                            st.rerun()
+                except:
+                    st.warning("Ensure carriers/drivers are added first.")
+            else:
+                st.info("Enter locations and click 'Calculate' to see metrics.")
+
+
+    # ==========================================
+    # TAB 3: CARRIER MANAGEMENT
+    # ==========================================
+    with tab_carriers:
+        st.subheader("Partner Carriers")
+        
+        with st.expander("➕ Add New Carrier", expanded=False):
+            with st.form("add_carrier"):
+                c_name = st.text_input("Carrier Name")
+                c_contact = st.text_input("Contact Info")
+                c_fleet = st.number_input("Fleet Size", 1, 1000)
+                submitted = st.form_submit_button("Add Carrier")
+                if submitted:
+                    res = requests.post(f"{API_URL}/logistics/carriers/create", json={"name": c_name, "contact_info": c_contact, "fleet_size": c_fleet})
+                    if res.status_code == 200: st.success("Carrier Added!")
+        
+        st.divider()
+        
+        st.subheader("Drivers Pool")
+        with st.expander("➕ Onboard Driver", expanded=False):
+            with st.form("add_driver"):
+                try:
+                    carriers = requests.get(f"{API_URL}/logistics/carriers/list").json() or []
+                    c_map = {c['name']: c['id'] for c in carriers}
+                    
+                    d_name = st.text_input("Driver Name")
+                    d_license = st.text_input("License #")
+                    d_carrier = st.selectbox("Associated Carrier", list(c_map.keys()) if c_map else [])
+                    
+                    sub_d = st.form_submit_button("Add Driver")
+                    if sub_d and d_carrier:
+                        res = requests.post(f"{API_URL}/logistics/drivers/create", json={
+                            "name": d_name, 
+                            "license_number": d_license, 
+                            "carrier_id": c_map[d_carrier]
+                        })
+                        if res.status_code == 200: st.success("Driver Onboarded!")
+                except: st.error("Load carriers first")
+
+            # Customer Tracking Page Implementation
+# This will be appended to dashboard.py
+
+# ==========================================
+# PAGE: LOGISTICS OPTIMIZE (Customer Tracking)
+# ==========================================
+if page == "Logistics Optimize":
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                color: white; padding: 24px 32px; border-radius: 12px; 
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 24px;">
+        <h1 style="margin: 0; font-size: 2em; font-weight: 700; letter-spacing: -0.5px;">📦 Track Your Delivery</h1>
+        <p style="margin: 8px 0 0 0; font-size: 0.95em; opacity: 0.85; font-weight: 400;">Real-time delivery tracking</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Tracking Number Input
+    tracking_number = st.text_input("🔍 Enter Tracking Number", placeholder="e.g., SHIP-2024-001")
+    
+    if tracking_number:
+        try:
+            # Fetch shipment data
+            shipments = requests.get(f"{API_URL}/logistics/shipments/list").json()
+            shipment = next((s for s in shipments if s['tracking_number'] == tracking_number), None)
+            
+            if shipment:
+                # Display shipment info
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Status", shipment['status'])
+                with col2:
+                    st.metric("Progress", f"{shipment.get('progress_percent', 0):.1f}%")
+                with col3:
+                    if shipment.get('eta'):
+                        eta_str = shipment['eta'].split('T')[0] if 'T' in str(shipment['eta']) else str(shipment['eta'])
+                        st.metric("ETA", eta_str)
+                    else:
+                        st.metric("ETA", "Calculating...")
+                
+                # Progress Bar
+                progress = shipment.get('progress_percent', 0)
+                st.markdown(f"""
+                <div style="background: #e5e7eb; border-radius: 10px; height: 24px; overflow: hidden; margin: 20px 0;">
+                    <div style="background: linear-gradient(90deg, #10b981, #059669); 
+                                width: {progress}%; height: 100%; 
+                                transition: width 0.5s ease;
+                                display: flex; align-items: center; justify-content: center;
+                                color: white; font-weight: bold; font-size: 0.85em;">
+                        {progress:.1f}%
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.divider()
+                
+                # Live Map
+                lat = shipment.get('current_location_lat')
+                lon = shipment.get('current_location_lon')
+                
+                if lat and lon:
+                    st.subheader("🗺️ Live Location")
+                    
+                    # Map
+                    m = folium.Map(
+                        location=[lat, lon],
+                        zoom_start=14,
+                        tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                        attr='Google'
+                    )
+                    
+                    # Driver marker
+                    folium.Marker(
+                        [lat, lon],
+                        popup=f"Driver Location",
+                        icon=folium.Icon(color="red", icon="truck", prefix="fa")
+                    ).add_to(m)
+                    
+                    # Try to show route to destination
+                    try:
+                        if shipment.get('destination'):
+                            from geopy.geocoders import Nominatim
+                            geolocator = Nominatim(user_agent="scm_dashboard")
+                            dest_location = geolocator.geocode(shipment['destination'])
+                            
+                            if dest_location:
+                                dest_coords = (dest_location.latitude, dest_location.longitude)
+                                
+                                # Destination marker
+                                folium.Marker(
+                                    dest_coords,
+                                    popup=f"Destination: {shipment['destination']}",
+                                    icon=folium.Icon(color="green", icon="home", prefix="fa")
+                                ).add_to(m)
+                                
+                                # Route line
+                                osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon},{lat};{dest_coords[1]},{dest_coords[0]}"
+                                osrm_res = requests.get(osrm_url, params={"overview": "full", "geometries": "polyline"}, timeout=5)
+                                
+                                if osrm_res.status_code == 200:
+                                    route_data = osrm_res.json()
+                                    if route_data.get('routes'):
+                                        route_geom = route_data['routes'][0]['geometry']
+                                        route_path = polyline.decode(route_geom)
+                                        folium.PolyLine(route_path, color="#3b82f6", weight=5, opacity=0.7).add_to(m)
+                    except:
+                        pass
+                    
+                    st_folium(m, width="100%", height=450)
+                    
+                    # Auto-refresh button
+                    st.info("💡 Click the button below to refresh and see the latest location")
+                    if st.button("🔄 Refresh Tracking", type="primary"):
+                        st.rerun()
+                else:
+                    st.warning("📍 Waiting for driver to start delivery...")
+                    
+            else:
+                st.error("❌ Tracking number not found. Please check and try again.")
+        except Exception as e:
+            st.error(f"Error fetching tracking data: {e}")
+    else:
+        st.info("👆 Enter your tracking number above to see delivery status")

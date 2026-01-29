@@ -218,3 +218,71 @@ class POItem(Base):
 
     purchase_order = relationship("PurchaseOrder", back_populates="items")
     product = relationship("Product", back_populates="po_items")
+
+
+# =====================================================
+# 9. LOGISTICS MANAGEMENT (New Features)
+# =====================================================
+
+class Carrier(Base):
+    __tablename__ = "carriers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    contact_info = Column(String, nullable=True)
+    fleet_size = Column(Integer, default=0)
+    rating = Column(Float, default=4.5)
+    
+    drivers = relationship("Driver", back_populates="carrier", cascade="all, delete-orphan")
+    shipments = relationship("Shipment", back_populates="carrier")
+
+
+class Driver(Base):
+    __tablename__ = "drivers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    license_number = Column(String, unique=True, nullable=False)
+    status = Column(String, default="AVAILABLE") # AVAILABLE, ON_TRIP, OFF_DUTY
+    
+    carrier_id = Column(Integer, ForeignKey("carriers.id"), nullable=False)
+    carrier = relationship("Carrier", back_populates="drivers")
+    
+    shipments = relationship("Shipment", back_populates="driver")
+
+
+class Shipment(Base):
+    __tablename__ = "shipments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tracking_number = Column(String, unique=True, index=True, nullable=False)
+    
+    # Route Details
+    origin = Column(String, nullable=False)
+    destination = Column(String, nullable=False)
+    waypoints = Column(Text, nullable=True) # JSON string of waypoints
+    route_geometry = Column(Text, nullable=True) # Polyline string
+    total_distance_km = Column(Float, default=0.0)
+    
+    # Origin coordinates (stored at creation, never updated)
+    origin_lat = Column(Float, nullable=True)
+    origin_lon = Column(Float, nullable=True)
+    origin_snapped = Column(Boolean, default=False)
+    
+    # Execution
+    status = Column(String, default="SCHEDULED") # SCHEDULED, IN_TRANSIT, DELIVERED, DELAYED
+    current_location_lat = Column(Float, nullable=True)
+    current_location_lon = Column(Float, nullable=True)
+    progress_percent = Column(Float, default=0.0)
+    
+    # Dates
+    scheduled_date = Column(DateTime, nullable=True)
+    eta = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Assignments
+    carrier_id = Column(Integer, ForeignKey("carriers.id"), nullable=True)
+    driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=True)
+    
+    carrier = relationship("Carrier", back_populates="shipments")
+    driver = relationship("Driver", back_populates="shipments")
