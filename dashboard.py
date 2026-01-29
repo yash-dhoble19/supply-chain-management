@@ -131,17 +131,23 @@ st.markdown("""
 # --- SIDEBAR ---
 st.sidebar.title("🏭 Expedition Co.")
 page = st.sidebar.radio("Navigate", ["Dashboard", "Inventory Management", "Demand Forecasting", "Procurement Agent", "Logistics Risk", "Logistics Optimize"])
+
+
 # --- Real Health Check for Sidebar ---
 backend_status = "🔴 Offline"
+error_msg = ""
 try:
-    response = requests.get(f"{API_URL}/inventory/analysis", timeout=2)
+    response = requests.get(f"{API_URL}/inventory/analysis", timeout=5)
     if response.status_code == 200:
         backend_status = "🟢 Online"
-except:
-    pass
+    else:
+        error_msg = f" (Status: {response.status_code})"
+except Exception as e:
+    error_msg = f" (Connection Error)"
 
 st.sidebar.markdown("---")
-st.sidebar.caption(f"System Status: {backend_status}")
+st.sidebar.caption(f"System Status: {backend_status}{error_msg}")
+st.sidebar.caption(f"Backend URL: {API_URL}")
 
 # --- SESSION STATE INITIALIZATION ---
 if "current_page" not in st.session_state:
