@@ -1,3 +1,12 @@
+---
+title: Scm Backend
+emoji: 🏭
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 # 🏭 GenAI-Powered Supply Chain Control Tower
 
 This project is an AI-driven Supply Chain Management system that integrates a **FastAPI backend** (logic & AI agents) with a **Streamlit frontend** (interactive dashboard).
