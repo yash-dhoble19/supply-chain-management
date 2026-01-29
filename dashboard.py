@@ -1811,6 +1811,17 @@ def render_main_page():
                     ["All"] + [f"{m} months" for m in all_data_months],
                     key="filter_data_months"
                 )
+
+                if st.button("🗑️ Clear All History", type="secondary", use_container_width=True):
+                    try:
+                        if os.path.exists(STORAGE_FILE):
+                            os.remove(STORAGE_FILE)
+                        st.session_state.forecast_history = []
+                        st.session_state.forecast_result = None
+                        st.success("History cleared!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error clearing history: {e}")
                 
                 # Apply filters
                 filtered_forecasts = st.session_state.forecast_history.copy()
