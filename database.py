@@ -9,13 +9,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# The DATABASE_URL should be set in environment variables (or .env locally)
-# Format: postgresql://username:password@hostname/dbname
+# REPLACE THE HARDCODED URL WITH THIS:
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
-
-if not SQLALCHEMY_DATABASE_URL:
-    # Fallback for local development if .env is missing
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./supply_chain.db"
+# ⚠️ REPLACE 'password' with your actual PostgreSQL password
+# Format: postgresql://username:password@localhost/dbname
+SQLALCHEMY_DATABASE_URL = "postgresql://postgres:yash123@localhost/supply_chain_db"
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
