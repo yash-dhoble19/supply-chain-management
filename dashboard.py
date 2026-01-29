@@ -19,6 +19,9 @@ if "BACKEND_URL" in st.secrets:
     API_URL = st.secrets["BACKEND_URL"]
 else:
     API_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+
+# Google Maps API Key
+GOOGLE_MAPS_API_KEY = st.secrets.get("GOOGLE_MAPS_API_KEY", os.getenv("GOOGLE_MAPS_API_KEY", ""))
 st.set_page_config(page_title="Expedition Co. Control Tower", layout="wide", page_icon="🏭")
 # Country mapping
 COUNTRY_MAP = {
@@ -168,6 +171,65 @@ if "storage_initialized" not in st.session_state:
 # ==========================================
 # HELPER FUNCTIONS (DEFINED BEFORE USE)
 # ==========================================
+
+def render_google_map(center_lat, center_lon, markers=None, polyline_path=None, height=450):
+    """Renders an interactive Google Map using the JavaScript API with fallback."""
+    if not GOOGLE_MAPS_API_KEY:
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=14, 
+                       tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google')
+        if markers:
+            for marker in markers:
+                folium.Marker([marker['lat'], marker['lon']], popup=marker.get('title', '')).add_to(m)
+        if polyline_path:
+            folium.PolyLine(polyline_path, color="#3b82f6", weight=5).add_to(m)
+        return st_folium(m, width="100%", height=height)
+
+    # Convert Python data to JS format
+    markers_json = json.dumps(markers or [])
+    path_json = json.dumps([{"lat": p[0], "lng": p[1]} for p in polyline_path] if polyline_path else [])
+
+    map_html = f'''
+    <div id="map" style="height: {height}px; width: 100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+    <script>
+      function initMap() {{
+        const center = {{ lat: {center_lat}, lng: {center_lon} }};
+        const map = new google.maps.Map(document.getElementById("map"), {{
+          zoom: 14,
+          center: center,
+          mapTypeId: 'hybrid',
+          disableDefaultUI: false,
+          zoomControl: true,
+          streetViewControl: false
+        }});
+
+        const markers = {markers_json};
+        markers.forEach(m => {{
+          new google.maps.Marker({{
+            position: {{ lat: m.lat, lng: m.lon }},
+            map: map,
+            title: m.title
+          }});
+        }});
+
+        const pathData = {path_json};
+        if (pathData.length > 0) {{
+          const routePath = new google.maps.Polyline({{
+            path: pathData,
+            geodesic: true,
+            strokeColor: "#3b82f6",
+            strokeOpacity: 0.8,
+            strokeWeight: 6
+          }});
+          routePath.setMap(map);
+          const bounds = new google.maps.LatLngBounds();
+          pathData.forEach(p => bounds.extend(p));
+          map.fitBounds(bounds);
+        }}
+      }}
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key={GOOGLE_MAPS_API_KEY}&callback=initMap" async defer></script>
+    '''
+    return components.html(map_html, height=height + 20)
 
 def display_recommendations(recommendations, filter_type):
     """Display procurement recommendations with interactive cards"""
@@ -2908,64 +2970,31 @@ if page == "Logistics Risk":
                 if lat and lon:
                     current_pos = [lat, lon]
                     
-                    # Map Configuration - SATELLITE TILES (Google Maps Hybrid)
-                    m = folium.Map(
-                        location=current_pos,
-                        zoom_start=15,
-                        tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-                        attr='Google'
-                    )
+                    # --- GOOGLE MAPS VISUALIZATION ---
+                    markers = [{"lat": lat, "lon": lon, "title": f"Shipment: {s['tracking_number']}"}]
+                    route_path = None
+                    dest_coords = None
                     
-                    # Draw Original Planned Route (if available) - FADED
-                    if s.get('route_geometry'):
-                        try:
-                            decoded_path = polyline.decode(s['route_geometry'])
-                            folium.PolyLine(decoded_path, color="#94a3b8", weight=3, opacity=0.3, dash_array="5,5").add_to(m)
-                        except: pass
-                    
-                    # Get DYNAMIC ROUTE from current location to destination
                     try:
-                        # Get destination coordinates
-                        dest_coords = None
                         if s.get('destination'):
                             from geopy.geocoders import Nominatim
                             geolocator = Nominatim(user_agent="scm_dashboard")
                             location = geolocator.geocode(s['destination'])
                             if location:
                                 dest_coords = (location.latitude, location.longitude)
-                        
-                        if dest_coords:
-                            # Call OSRM for dynamic route
-                            osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon},{lat};{dest_coords[1]},{dest_coords[0]}"
-                            osrm_params = {"overview": "full", "geometries": "polyline"}
-                            osrm_res = requests.get(osrm_url, params=osrm_params, timeout=5)
-                            
-                            if osrm_res.status_code == 200:
-                                route_data = osrm_res.json()
-                                if route_data.get('routes'):
-                                    remaining_geometry = route_data['routes'][0]['geometry']
-                                    remaining_path = polyline.decode(remaining_geometry)
-                                    # Draw REMAINING route in GREEN (bold)
-                                    folium.PolyLine(remaining_path, color="#10b981", weight=6, opacity=0.8).add_to(m)
-                                    
-                                    # Add destination marker
-                                    folium.Marker(
-                                        dest_coords,
-                                        popup=f"Destination: {s['destination']}",
-                                        icon=folium.Icon(color="blue", icon="flag-checkered", prefix="fa")
-                                    ).add_to(m)
+                                markers.append({"lat": dest_coords[0], "lon": dest_coords[1], "title": f"Destination: {s['destination']}"})
+                                
+                                # OSRM Route
+                                osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon},{lat};{dest_coords[1]},{dest_coords[0]}"
+                                osrm_res = requests.get(osrm_url, params={"overview": "full", "geometries": "polyline"}, timeout=5)
+                                if osrm_res.status_code == 200:
+                                    route_data = osrm_res.json()
+                                    if route_data.get('routes'):
+                                        route_path = polyline.decode(route_data['routes'][0]['geometry'])
                     except Exception as e:
-                        st.caption(f"⚠️ Could not calculate dynamic route: {str(e)[:50]}")
+                        st.caption(f"⚠️ Map Detail Error: {str(e)[:50]}")
                     
-                    # Live Truck Marker
-                    folium.Marker(
-                        current_pos,
-                        popup=f"LIVE: {s['tracking_number']}",
-                        icon=folium.Icon(color="red", icon="truck", prefix="fa")
-                    ).add_to(m)
-                    
-                    # Render Map
-                    st_folium(m, width="100%", height=500, key=f"map_{s['id']}_{lat}_{lon}") # Key updates map on change
+                    render_google_map(lat, lon, markers=markers, polyline_path=route_path, height=500)
                 else:
                     st.warning("⚠️ No GPS signal received yet. Driver must enable tracking.")
 
@@ -3171,52 +3200,28 @@ if page == "Logistics Optimize":
                 if lat and lon:
                     st.subheader("🗺️ Live Location")
                     
-                    # Map
-                    m = folium.Map(
-                        location=[lat, lon],
-                        zoom_start=14,
-                        tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-                        attr='Google'
-                    )
+                    # --- GOOGLE MAPS VISUALIZATION ---
+                    markers = [{"lat": lat, "lon": lon, "title": "Driver Location"}]
+                    route_path = None
+                    dest_coords = None
                     
-                    # Driver marker
-                    folium.Marker(
-                        [lat, lon],
-                        popup=f"Driver Location",
-                        icon=folium.Icon(color="red", icon="truck", prefix="fa")
-                    ).add_to(m)
-                    
-                    # Try to show route to destination
                     try:
                         if shipment.get('destination'):
                             from geopy.geocoders import Nominatim
                             geolocator = Nominatim(user_agent="scm_dashboard")
                             dest_location = geolocator.geocode(shipment['destination'])
-                            
                             if dest_location:
                                 dest_coords = (dest_location.latitude, dest_location.longitude)
+                                markers.append({"lat": dest_coords[0], "lon": dest_coords[1], "title": f"Destination: {shipment['destination']}"})
                                 
-                                # Destination marker
-                                folium.Marker(
-                                    dest_coords,
-                                    popup=f"Destination: {shipment['destination']}",
-                                    icon=folium.Icon(color="green", icon="home", prefix="fa")
-                                ).add_to(m)
-                                
-                                # Route line
+                                # OSRM Route
                                 osrm_url = f"http://router.project-osrm.org/route/v1/driving/{lon},{lat};{dest_coords[1]},{dest_coords[0]}"
                                 osrm_res = requests.get(osrm_url, params={"overview": "full", "geometries": "polyline"}, timeout=5)
-                                
                                 if osrm_res.status_code == 200:
-                                    route_data = osrm_res.json()
-                                    if route_data.get('routes'):
-                                        route_geom = route_data['routes'][0]['geometry']
-                                        route_path = polyline.decode(route_geom)
-                                        folium.PolyLine(route_path, color="#3b82f6", weight=5, opacity=0.7).add_to(m)
-                    except:
-                        pass
+                                    route_path = polyline.decode(osrm_res.json()['routes'][0]['geometry'])
+                    except: pass
                     
-                    st_folium(m, width="100%", height=450)
+                    render_google_map(lat, lon, markers=markers, polyline_path=route_path, height=450)
                     
                     # Auto-refresh button
                     st.info("💡 Click the button below to refresh and see the latest location")

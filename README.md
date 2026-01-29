@@ -15,7 +15,7 @@ This project is an AI-driven Supply Chain Management system that integrates a **
 
 * **📊 Dashboard:** Real-time visualization of inventory and order status.
 * **🤖 AI Demand Forecasting:** Uses historical data + gemini AI (gemini-1.5-flash) to predict future sales trends considering market news.
-* **🚚 Logistics Control:** Route optimization using OSRM (Open Source Routing Machine) & AI-based risk analysis for delivery locations.
+* **🚚 Logistics Control:** Real-time route tracking and visualization using **Google Maps JavaScript API** and risk analysis.
 * **🤝 AI Procurement:** Compares supplier quotes and recommends the best option based on deadlines, cost, and reliability.
 * **📦 Inventory Management:** Tracks stock levels and alerts on critical shortages.
 
@@ -27,7 +27,7 @@ This project is an AI-driven Supply Chain Management system that integrates a **
 * **Backend:** FastAPI, Python, SQLAlchemy
 * **AI Models:**  gemini AI (gemini-1.5-flash)
 * **Database:** PostgreSQL
-* **Routing:** OSRM & Nominatim (OpenStreetMap)
+* **Routing:** Google Maps JavaScript API, OSRM & Nominatim
 
 ---
 
