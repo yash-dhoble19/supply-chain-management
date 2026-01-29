@@ -19,3 +19,6 @@ streamlit
 streamlit-folium
 folium
 polyline
+psycopg2-binary
+gunicorn
+python-multipart

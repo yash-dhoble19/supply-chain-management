@@ -9,11 +9,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# REPLACE THE HARDCODED URL WITH THIS:
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
-# ⚠️ REPLACE 'password' with your actual PostgreSQL password
-# Format: postgresql://username:password@localhost/dbname
-SQLALCHEMY_DATABASE_URL = "postgresql://postgres:yash123@localhost/supply_chain_db"
+# Use DATABASE_URL from environment with fallback to local PostgreSQL
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:yash123@localhost/supply_chain_db")
+
+# Neon requires 'postgresql+psycopg2://' or similar if using specific drivers, 
+# but SQLAlchemy usually handles 'postgresql://' just fine.
+if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -713,6 +713,91 @@ elif page == "Inventory Management":
     except:
         st.error("Cannot connect to Database.")
 
+    @st.dialog("Add New Product")
+    def add_form():
+        if 'new_prod_data' not in st.session_state:
+            st.session_state['new_prod_data'] = {
+                "name": "", "cat": "Raw Material", "stage": "Raw Material",
+                "stock": 100, "price": 10.0, "opt": 500, "safe": 50
+            }
+        if 'voice_text' not in st.session_state:
+            st.session_state['voice_text'] = ""
+
+        st.write("How do you want to add the product?")
+        tab_ai, tab_manual = st.tabs(["🎙️ Voice / AI", "✍️ Manual Entry"])
+
+        with tab_ai:
+            st.info("💡 Click the mic and say something like: 'Add 500 sheets of Metal for 20 dollars'")
+            c_mic, c_info = st.columns([1, 4])
+            with c_mic:
+                text = speech_to_text(language='en', start_prompt="🎤 Record", stop_prompt="🛑 Stop", just_once=False, key='STT')
+            
+            if text: st.session_state['voice_text'] = text
+            user_text = st.text_area("Transcript (Editable)", value=st.session_state['voice_text'], height=70)
+            
+            if st.button("✨ Generate Form", type="primary"):
+                if user_text:
+                    with st.spinner("🤖 AI is processing your voice command..."):
+                        try:
+                            res = requests.post(f"{API_URL}/ai/parse_product_info", json={"description": user_text})
+                            if res.status_code == 200:
+                                ai_data = res.json()
+                                st.session_state['new_prod_data'].update({
+                                    'name': ai_data.get('name', ''),
+                                    'cat': ai_data.get('category', 'Raw Material'),
+                                    'stage': ai_data.get('stage', 'Raw Material'),
+                                    'stock': ai_data.get('current_stock', 0),
+                                    'price': ai_data.get('unit_price', 0.0),
+                                    'opt': ai_data.get('optimal_stock_level', 100),
+                                    'safe': ai_data.get('safety_stock_level', 20)
+                                })
+                                st.success("✅ Voice processed! Check 'Manual Entry' tab.")
+                            else:
+                                    error_detail = res.json().get('detail', res.text)
+                                    st.error(f"❌ AI Processing Failed: {error_detail}")
+                        except Exception as e: st.error(f"Error: {e}")
+
+        with tab_manual:
+            with st.form("new_product"):
+                d = st.session_state['new_prod_data']
+                c_a, c_b = st.columns(2)
+                sku = c_a.text_input("SKU (Auto)", f"NEW-{pd.Timestamp.now().strftime('%S%f')[:4]}")
+                name = c_b.text_input("Product Name", value=d['name'])
+                
+                cats = ["Electronics", "Raw Material", "Apparel", "Home", "Food"]
+                cat_idx = cats.index(d['cat']) if d['cat'] in cats else 0
+                cat = c_a.selectbox("Category", cats, index=cat_idx)
+                
+                stages = ["Raw Material", "Work in Progress", "Finished"]
+                stage_idx = stages.index(d['stage']) if d['stage'] in stages else 0
+                stage = c_b.selectbox("Stage", stages, index=stage_idx)
+                
+                stock = c_a.number_input("Current Stock", min_value=0, value=int(d['stock']))
+                price = c_b.number_input("Unit Price ($)", min_value=0.01, value=float(d['price']), step=0.1)
+                
+                optimal = max(1, stock if stock > 0 else 100) 
+                optimal = max(1, int(max(optimal, round(optimal * 1.2))))
+                safety = max(1, int(round(optimal * 0.2)))
+                
+                optimal = c_a.number_input("Optimal Stock", min_value=1, value=optimal)
+                safety = c_b.number_input("Safety Stock", min_value=1, value=safety)
+                
+                if st.form_submit_button("💾 Save to Database"):
+                    payload = {
+                        "sku": sku, "name": name, "category": cat, "stage": stage,
+                        "current_stock": stock, "optimal_stock_level": optimal,
+                        "safety_stock_level": safety, "unit_price": price
+                    }
+                    try:
+                        res = requests.post(f"{API_URL}/products/", json=payload)
+                        if res.status_code == 200:
+                            st.success("✅ Product Saved!")
+                            st.session_state['new_prod_data'] = {"name": "", "cat": "Raw Material", "stage": "Raw Material", "stock": 100, "price": 10.0, "opt": 500, "safe": 50}
+                            st.session_state['voice_text'] = "" 
+                            st.rerun()
+                        else: st.error(f"Error: {res.text}")
+                    except Exception as e: st.error(f"Connection Error: {e}")
+
     if not df.empty:
         # 2. KPIs
         total_value = (df['Stock'] * df['Price']).sum()
@@ -726,7 +811,7 @@ elif page == "Inventory Management":
         # 3. CHARTS
         st.subheader("Inventory Distribution")
         col_charts, col_actions = st.columns([2, 1])
-        
+
         with col_charts:
             c_pie, c_bar = st.columns(2)
             with c_pie:
@@ -741,100 +826,11 @@ elif page == "Inventory Management":
                     st.plotly_chart(fig_bar, use_container_width=True)
 
         with col_actions:
-             st.subheader("Quick Actions")
-             st.info(f"💡 AI Suggestion: You have {critical_count} critical items.")
-             
-             @st.dialog("Add New Product")
-             def add_form():
-                if 'new_prod_data' not in st.session_state:
-                    st.session_state['new_prod_data'] = {
-                        "name": "", "cat": "Raw Material", "stage": "Raw Material",
-                        "stock": 100, "price": 10.0, "opt": 500, "safe": 50
-                    }
-                if 'voice_text' not in st.session_state:
-                    st.session_state['voice_text'] = ""
+            st.subheader("Quick Actions")
+            st.info(f"💡 AI Suggestion: You have {critical_count} critical items.")
 
-                st.write("How do you want to add the product?")
-                tab_ai, tab_manual = st.tabs(["🎙️ Voice / AI", "✍️ Manual Entry"])
-
-                with tab_ai:
-                    st.info("💡 Click the mic and say something like: 'Add 500 sheets of Metal for 20 dollars'")
-                    
-                    c_mic, c_info = st.columns([1, 4])
-                    with c_mic:
-                        text = speech_to_text(language='en', start_prompt="🎤 Record", stop_prompt="🛑 Stop", just_once=False, key='STT')
-                    
-                    if text: st.session_state['voice_text'] = text
-                    
-                    user_text = st.text_area("Transcript (Editable)", value=st.session_state['voice_text'], height=70)
-                    
-                    if st.button("✨ Generate Form", type="primary"):
-                        if user_text:
-                            with st.spinner("🤖 AI is processing your voice command..."):
-                                try:
-                                    res = requests.post(f"{API_URL}/ai/parse_product_info", json={"description": user_text})
-                                    if res.status_code == 200:
-                                        ai_data = res.json()
-                                        st.session_state['new_prod_data'].update({
-                                            'name': ai_data.get('name', ''),
-                                            'cat': ai_data.get('category', 'Raw Material'),
-                                            'stage': ai_data.get('stage', 'Raw Material'),
-                                            'stock': ai_data.get('current_stock', 0),
-                                            'price': ai_data.get('unit_price', 0.0),
-                                            'opt': ai_data.get('optimal_stock_level', 100),
-                                            'safe': ai_data.get('safety_stock_level', 20)
-                                        })
-                                        st.success("✅ Voice processed! Check 'Manual Entry' tab.")
-                                    else:  # Show the actual error from the API
-                                           error_detail = res.json().get('detail', res.text)
-                                           st.error(f"❌ AI Processing Failed: {error_detail}")
-                                except Exception as e: st.error(f"Error: {e}")
-
-                with tab_manual:
-                    with st.form("new_product"):
-                        d = st.session_state['new_prod_data']
-                        c_a, c_b = st.columns(2)
-                        sku = c_a.text_input("SKU (Auto)", f"NEW-{pd.Timestamp.now().strftime('%S%f')[:4]}")
-                        name = c_b.text_input("Product Name", value=d['name'])
-                        
-                        cats = ["Electronics", "Raw Material", "Apparel", "Home", "Food"]
-                        cat_idx = cats.index(d['cat']) if d['cat'] in cats else 0
-                        cat = c_a.selectbox("Category", cats, index=cat_idx)
-                        
-                        stages = ["Raw Material", "Work in Progress", "Finished"]
-                        stage_idx = stages.index(d['stage']) if d['stage'] in stages else 0
-                        stage = c_b.selectbox("Stage", stages, index=stage_idx)
-                        
-                        stock = c_a.number_input("Current Stock", min_value=0, value=int(d['stock']))
-                        price = c_b.number_input("Unit Price ($)", min_value=0.01, value=float(d['price']), step=0.1)
-                        
-                        # Calculate optimal and safety based on stock
-                        optimal = max(1, stock if stock > 0 else 100) 
-                        optimal = max(1, int(max(optimal, round(optimal * 1.2))))
-                        safety = max(1, int(round(optimal * 0.2)))
-                        
-                        optimal = c_a.number_input("Optimal Stock", min_value=1, value=optimal)
-                        safety = c_b.number_input("Safety Stock", min_value=1, value=safety)
-                        
-                        if st.form_submit_button("💾 Save to Database"):
-                            payload = {
-                                "sku": sku, "name": name, "category": cat, "stage": stage,
-                                "current_stock": stock, "optimal_stock_level": optimal,
-                                "safety_stock_level": safety, "unit_price": price
-                            }
-                            try:
-                                res = requests.post(f"{API_URL}/products/", json=payload)
-                                if res.status_code == 200:
-                                    st.success("✅ Product Saved!")
-                                    st.session_state['new_prod_data'] = {"name": "", "cat": "Raw Material", "stage": "Raw Material", "stock": 100, "price": 10.0, "opt": 500, "safe": 50}
-                                    st.session_state['voice_text'] = "" 
-                                    st.rerun()
-                                else: st.error(f"Error: {res.text}")
-                            except Exception as e: st.error(f"Connection Error: {e}")
-
-
-             @st.dialog("Edit Product")
-             def edit_form():
+            @st.dialog("Edit Product")
+            def edit_form():
                 opts = {f"{row['SKU']} - {row['Product']}": row['id'] for i, row in df.iterrows()}
                 sel = st.selectbox("Select Product", list(opts.keys()))
                 prod_id = opts[sel]
@@ -847,8 +843,8 @@ elif page == "Inventory Management":
                         requests.put(f"{API_URL}/products/{prod_id}", json={"stage": new_stage, "current_stock": new_stock, "unit_price": new_price})
                         st.rerun()
 
-             @st.dialog("Log Stock")
-             def log_form():
+            @st.dialog("Log Stock")
+            def log_form():
                 opts = {f"{row['SKU']} - {row['Product']}": row['id'] for i, row in df.iterrows()}
                 sel = st.selectbox("Select Product", list(opts.keys()))
                 prod_id = opts[sel]
@@ -859,16 +855,16 @@ elif page == "Inventory Management":
                         requests.post(f"{API_URL}/inventory/logs", json={"product_id": prod_id, "quantity_change": qty, "reason": reason})
                         st.rerun()
 
-             @st.dialog("Delete")
-             def delete_form():
+            @st.dialog("Delete")
+            def delete_form():
                 opts = {f"{row['SKU']} - {row['Product']}": row['id'] for i, row in df.iterrows()}
                 sel = st.selectbox("Select Product", list(opts.keys()))
                 if st.button("Confirm Delete", type="primary"):
                     requests.delete(f"{API_URL}/products/{opts[sel]}")
                     st.rerun()
 
-             @st.dialog("💲 AI Smart Pricing")
-             def pricing_form():
+            @st.dialog("💲 AI Smart Pricing")
+            def pricing_form():
                 opts = {f"{row['SKU']} - {row['Product']}": row['id'] for i, row in df.iterrows()}
                 sel = st.selectbox("Select Product", list(opts.keys()))
                 prod_id = opts[sel]
@@ -905,8 +901,8 @@ elif page == "Inventory Management":
                             del st.session_state['pricing_result']
                             st.rerun()
 
-             @st.dialog("🔮 The AI Crystal Ball")
-             def simulator_form():
+            @st.dialog("🔮 The AI Crystal Ball")
+            def simulator_form():
                 st.write("Stress test your inventory against hypothetical events.")
                 scenario_type = st.selectbox("Choose a Scenario", [
                     "Custom Input...", "🚢 Supplier Delay (Port Strike)", "📈 Viral Demand Spike (+50% Sales)",
@@ -938,16 +934,16 @@ elif page == "Inventory Management":
                     st.write(res.get('impact_summary'))
                     st.success(f"💡 **Strategy:** {res.get('recommendation')}")
 
-             c1, c2 = st.columns(2)
-             c3, c4 = st.columns(2)
-             if c1.button("➕ Add", use_container_width=True): add_form()
-             if c2.button("✏️ Edit", use_container_width=True): edit_form()
-             if c3.button("🔄 Log", use_container_width=True): log_form()
-             if c4.button("🗑️ Delete", use_container_width=True): delete_form()
-             
-             c5, c6 = st.columns(2)
-             if c5.button("💲 Smart Pricing", use_container_width=True): pricing_form()
-             if c6.button("🔮 Crystal Ball", use_container_width=True): simulator_form()
+            c1, c2 = st.columns(2)
+            c3, c4 = st.columns(2)
+            if st.button("➕ Add Product", type="primary", use_container_width=True): add_form()
+            if c2.button("✏️ Edit", use_container_width=True): edit_form()
+            if c3.button("🔄 Log", use_container_width=True): log_form()
+            if c4.button("🗑️ Delete", use_container_width=True): delete_form()
+            
+            c5, c6 = st.columns(2)
+            if c5.button("💲 Smart Pricing", use_container_width=True): pricing_form()
+            if c6.button("🔮 Crystal Ball", use_container_width=True): simulator_form()
 
         st.subheader("Current Inventory Status")
         search_term = st.text_input("🔍 Search Inventory", placeholder="Type Name, SKU, or Category...")
@@ -980,8 +976,10 @@ elif page == "Inventory Management":
             st.info("No items match your search.")
 
     else:
-        st.info("No products found.")
-
+        st.info("📦 No products found in the database.")
+        st.write("Click below to add your first product to the inventory.")
+        if st.button("➕ Add Your First Product", type="primary"): 
+            add_form()
 # ==========================================
 # DEMAND FORECASTING HELPER FUNCTIONS & SETUP
 # ==========================================
