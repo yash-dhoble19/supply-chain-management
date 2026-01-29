@@ -19,3 +19,9 @@ streamlit
 streamlit-folium
 folium
 polyline
+
+# Production dependencies
+openai
+psycopg2-binary
+python-multipart
+gunicorn
