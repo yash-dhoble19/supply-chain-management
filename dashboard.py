@@ -14,7 +14,8 @@ import os
 import streamlit.components.v1 as components
 import time
 # --- CONFIGURATION ---
-API_URL = "http://127.0.0.1:8000"
+# Fallback to localhost if no environment variable is set
+API_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 st.set_page_config(page_title="Expedition Co. Control Tower", layout="wide", page_icon="🏭")
 # Country mapping
 COUNTRY_MAP = {
