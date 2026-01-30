@@ -258,30 +258,58 @@ def get_route_data(start_coords, end_coords, waypoint_coords=None):
 
 def parse_product_info_local(description: str):
     text = description.lower()
+    
+    # 1. Clean Name (remove command words like 'add', 'create', 'please')
     name = description.strip()
+    name = re.sub(r"^(?i)(add|create|insert|new|please|make)\s+", "", name)
+    name = re.sub(r"\s+per\s+unit.*$", "", name, flags=re.IGNORECASE)
+    
+    # 2. Category Detection
     category = "Raw Material"
-    if "finished good" in text or "finished" in text:
+    if any(k in text for k in ["finished", "final", "complete"]):
         category = "Finished Good"
     elif "packaging" in text:
         category = "Packaging"
-    elif "component" in text:
+    elif any(k in text for k in ["component", "part", "assembly"]):
         category = "Component"
+    elif any(k in text for k in ["metal", "sheet", "steel", "iron", "wood", "plastic"]):
+        category = "Raw Material"
+    
     stage = category
+    
+    # 3. Stock/Quantity Detection (Add 'sheets', 'items', etc)
     stock = 0
-    m = re.search(r"(?:stock|qty|quantity|units|pcs)[:\\s]*([0-9]+)", text)
-    if m:
-        stock = int(m.group(1))
-    price = 0.1  # Default non-zero price to avoid frontend constraints
-    m = re.search(r"(?:rs\.?|inr|\$)\s*([0-9]+(?:\.[0-9]+)?)", text)
-    if m:
-        price = float(m.group(1))
+    stock_match = re.search(r"(\d+)\s*(?:stock|qty|quantity|units|pcs|sheets|items|pieces|boxes)", text)
+    if stock_match:
+        stock = int(stock_match.group(1))
     else:
-        m = re.search(r"(?:price|cost)[:\s]*([0-9]+(?:\.[0-9]+)?)", text)
+        # Fallback to any standalone number if stock not found with a keyword
+        numbers = re.findall(r"\b\d+\b", text)
+        if numbers:
+            stock = int(numbers[0])
+            
+    # 4. Price Detection (Add 'dollars', 'rs', 'per unit')
+    price = 0.1  # Default to avoid frontend min_value=1.0 errors if they exist
+    
+    # Look for patterns like "$20", "20 dollars", "20 per unit"
+    price_patterns = [
+        r"(?:rs\.?|inr|\$)\s*([0-9]+(?:\.[0-9]+)?)",
+        r"([0-9]+(?:\.[0-9]+)?)\s*(?:dollars?|bucks?|usd)",
+        r"([0-9]+(?:\.[0-9]+)?)\s*per\s*unit",
+        r"(?:price|cost)[:\s]*([0-9]+(?:\.[0-9]+)?)"
+    ]
+    
+    for pattern in price_patterns:
+        m = re.search(pattern, text)
         if m:
             price = float(m.group(1))
+            break
+            
+    # Calculate sensible defaults
     optimal = stock if stock > 0 else 100
     optimal = int(max(optimal, round(optimal * 1.2)))
     safety = int(round(optimal * 0.2))
+    
     return {
         "name": name,
         "category": category,
