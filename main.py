@@ -12,6 +12,7 @@ import json
 import os
 import traceback
 from dotenv import load_dotenv
+import openai
 from geopy.geocoders import Nominatim
 import requests
 import re
@@ -189,14 +190,20 @@ def analyze_order_with_groq(address):
             messages=[{"role": "system", "content": "Risk Manager. Mark HIGH/LOW RISK."}, {"role": "user", "content": address}]
         )
         return response.choices[0].message.content
-    except: return "AI Error"
+    except openai.RateLimitError:
+        return "AI Rate Limit Reached. Please try again later."
+    except Exception: 
+        return "AI Error"
 
 def compare_suppliers_with_groq(material, max_days):
     try:
         prompt = f"Buy {material} in {max_days} days. Pick best supplier."
         response = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}])
         return response.choices[0].message.content
-    except: return "AI Error"
+    except openai.RateLimitError:
+        return "AI Rate Limit Reached. Please try again later."
+    except Exception: 
+        return "AI Error"
 
 def analyze_market_factors_with_groq(category, trend):
     prompt = f"Category: {category}. Trend: {trend}%. Output JSON with ai_adjustment_factor, insight_text, external_factors."
@@ -399,7 +406,9 @@ def generate_ai_morning_briefing(health_score, critical_count, pending_pos, db: 
             messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content
-    except:
+    except openai.RateLimitError:
+        return "Strategic briefing is currently unavailable due to AI rate limits. Please check critical items manually."
+    except Exception:
         return "Market conditions are stable. Review critical items and expedite pending orders. Health score indicates attention needed in supply chain operations. Prioritize addressing critical inventory levels and monitor pending purchase orders closely."
 
 def generate_urgency_reasoning(product, supplier):
@@ -424,7 +433,9 @@ def generate_urgency_reasoning(product, supplier):
             messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content
-    except:
+    except openai.RateLimitError:
+        return "AI Rate Limit Reached. Item requires urgent attention."
+    except Exception:
         return f"Stock critically low at {stock_pct:.0f}%. Immediate replenishment required."
 
 # --- 4. API ENDPOINTS ---
@@ -789,6 +800,12 @@ def draft_negotiation_email(req: ReorderRequest):
             "recommended_qty": needed,
             "estimated_cost": round(cost, 2)
         }
+    except openai.RateLimitError:
+        return {
+            "email_draft": "AI Rate Limit Reached. Please use a manual template.",
+            "recommended_qty": needed,
+            "estimated_cost": round(cost, 2)
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Email Failed: {str(e)}")
 
@@ -862,6 +879,17 @@ def generate_supplier_negotiation_email(supplier_id: int, db: Session = Depends(
                 "reliability": supplier.reliability_score
             }
         }
+    except openai.RateLimitError:
+        return {
+            "email": "AI Rate Limit Reached. Please draft this negotiation email manually.",
+            "supplier_name": supplier.name,
+            "supplier_email": supplier.contact_email,
+            "context": {
+                "total_pos": po_count,
+                "total_volume": round(total_volume, 2),
+                "reliability": supplier.reliability_score
+            }
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Email Generation Failed: {str(e)}")
 
@@ -900,6 +928,13 @@ def analyze_pricing_strategy(req: PricingRequest):
             response_format={"type": "json_object"}
         )
         return json.loads(response.choices[0].message.content)
+    except openai.RateLimitError:
+        return {
+            "new_price": req.current_price,
+            "action": "HOLD",
+            "reason": "AI currently rate limited. No automated pricing action taken.",
+            "confidence": 0
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Pricing Failed: {str(e)}")
 
@@ -942,6 +977,8 @@ def parse_product_info(request: AIProductParseRequest):
         
     except json.JSONDecodeError as e:
         return parse_product_info_local(request.description)
+    except openai.RateLimitError:
+        return parse_product_info_local(request.description)
     except Exception as e:
         traceback.print_exc()
         return parse_product_info_local(request.description)
@@ -959,6 +996,8 @@ def audit_inventory(req: InventoryReportRequest):
             messages=[{"role": "user", "content": prompt}]
         )
         return {"report": response.choices[0].message.content}
+    except openai.RateLimitError:
+        return {"report": "AI Rate Limit Reached. Strategic audit is temporarily unavailable."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Audit Failed: {str(e)}")
 
@@ -976,6 +1015,13 @@ def simulate_scenario(req: SimulationRequest):
             response_format={"type": "json_object"}
         )
         return json.loads(response.choices[0].message.content)
+    except openai.RateLimitError:
+        return {
+            "impact_score": 50,
+            "impact_summary": "AI Rate Limit Reached. Simulation unavailable.",
+            "affected_products": [],
+            "recommendation": "Monitor inventory levels manually."
+        }
     except Exception as e:
         raise HTTPException(500, str(e))
 
