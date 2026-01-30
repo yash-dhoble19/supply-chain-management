@@ -271,12 +271,12 @@ def parse_product_info_local(description: str):
     m = re.search(r"(?:stock|qty|quantity|units|pcs)[:\\s]*([0-9]+)", text)
     if m:
         stock = int(m.group(1))
-    price = 0.0
-    m = re.search(r"(?:rs\\.?|inr|\\$)\\s*([0-9]+(?:\\.[0-9]+)?)", text)
+    price = 0.1  # Default non-zero price to avoid frontend constraints
+    m = re.search(r"(?:rs\.?|inr|\$)\s*([0-9]+(?:\.[0-9]+)?)", text)
     if m:
         price = float(m.group(1))
     else:
-        m = re.search(r"(?:price|cost)[:\\s]*([0-9]+(?:\\.[0-9]+)?)", text)
+        m = re.search(r"(?:price|cost)[:\s]*([0-9]+(?:\.[0-9]+)?)", text)
         if m:
             price = float(m.group(1))
     optimal = stock if stock > 0 else 100

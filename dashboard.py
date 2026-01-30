@@ -854,7 +854,7 @@ elif page == "Inventory Management":
                 stage = c_b.selectbox("Stage", stages, index=stage_idx)
                 
                 stock = c_a.number_input("Current Stock", min_value=0, value=int(d['stock']))
-                price = c_b.number_input("Unit Price ($)", min_value=0.01, value=float(d['price']), step=0.1)
+                price = c_b.number_input("Unit Price ($)", min_value=0.0, value=float(d['price']), step=0.1)
                 
                 optimal = max(1, stock if stock > 0 else 100) 
                 optimal = max(1, int(max(optimal, round(optimal * 1.2))))
