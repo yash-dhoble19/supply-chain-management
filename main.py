@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -1197,6 +1198,397 @@ async def health_check():
         "ai_model": settings.gemini_model,
         "max_forecast_horizon": settings.max_forecast_horizon,
         "supported_countries": ["IN", "US", "UK"]
+    }
+
+
+def _shipment_status_tone(status: str) -> str:
+    return {
+        "IN_TRANSIT": "primary",
+        "SCHEDULED": "neutral",
+        "DELAYED": "warning",
+        "DELIVERED": "success",
+    }.get(status, "neutral")
+
+
+def _activity_timestamp(value) -> str:
+    if not value:
+        return datetime.utcnow().isoformat()
+    return value.isoformat()
+
+
+def _collect_dashboard_activities(db: Session, limit: int = 8):
+    activities = []
+
+    inventory_logs = (
+        db.query(models.InventoryLog)
+        .order_by(models.InventoryLog.change_date.desc())
+        .limit(limit)
+        .all()
+    )
+    for log in inventory_logs:
+        product = db.query(models.Product).filter(models.Product.id == log.product_id).first()
+        product_name = product.name if product else f"Product #{log.product_id}"
+        qty = abs(log.quantity_change or 0)
+        action = "added" if (log.quantity_change or 0) >= 0 else "removed"
+        reason = (log.reason or "stock update").replace("_", " ").title()
+        activities.append({
+            "id": f"inventory-{log.id}",
+            "title": f"{product_name} stock updated",
+            "description": f"{qty} units {action} via {reason}",
+            "timestamp": _activity_timestamp(log.change_date),
+            "type": "inventory",
+        })
+
+    purchase_orders = (
+        db.query(models.PurchaseOrder)
+        .order_by(models.PurchaseOrder.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    for po in purchase_orders:
+        supplier_name = po.supplier.name if po.supplier else "Unknown supplier"
+        status_label = (po.status or "DRAFT").replace("_", " ").title()
+        qty = po.quantity or 0
+        product_name = po.product_name or "inventory"
+        activities.append({
+            "id": f"po-{po.id}",
+            "title": f"PO {po.po_number} {status_label.lower()}",
+            "description": f"{qty} units of {product_name} with {supplier_name}",
+            "timestamp": _activity_timestamp(po.created_at),
+            "type": "procurement",
+        })
+
+    shipments = (
+        db.query(models.Shipment)
+        .order_by(models.Shipment.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    for shipment in shipments:
+        status_label = (shipment.status or "SCHEDULED").replace("_", " ").title()
+        progress = round(shipment.progress_percent or 0)
+        activities.append({
+            "id": f"shipment-{shipment.id}",
+            "title": f"Shipment {shipment.tracking_number} {status_label.lower()}",
+            "description": f"{shipment.origin} to {shipment.destination} at {progress}% completion",
+            "timestamp": _activity_timestamp(shipment.created_at),
+            "type": "shipment",
+        })
+
+    orders = (
+        db.query(models.Order)
+        .order_by(models.Order.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    for order in orders:
+        status_label = (order.status or "PENDING").replace("_", " ").title()
+        activities.append({
+            "id": f"order-{order.id}",
+            "title": f"Order #{order.id} {status_label.lower()}",
+            "description": f"{order.customer_name} delivery to {order.delivery_address or 'address pending'}",
+            "timestamp": _activity_timestamp(order.created_at),
+            "type": "order",
+        })
+
+    activities.sort(key=lambda item: item["timestamp"], reverse=True)
+    return activities[:limit]
+
+
+@app.get("/api/dashboard/metrics")
+def get_dashboard_metrics(db: Session = Depends(database.get_db)):
+    products = db.query(models.Product).all()
+    purchase_orders = db.query(models.PurchaseOrder).all()
+
+    total_skus = len(products)
+    categories = len({product.category for product in products if product.category})
+    critical_stock = sum(
+        1 for product in products
+        if (product.current_stock or 0) < (product.safety_stock_level or 0)
+    )
+    low_stock = sum(
+        1 for product in products
+        if (product.current_stock or 0) >= (product.safety_stock_level or 0)
+        and (product.current_stock or 0) < ((product.safety_stock_level or 0) * 1.2)
+    )
+    active_pos = sum(1 for po in purchase_orders if po.status != "RECEIVED")
+    in_transit_pos = sum(1 for po in purchase_orders if po.status == "IN_TRANSIT")
+    inventory_value = round(
+        sum((product.current_stock or 0) * (product.unit_price or 0) for product in products),
+        2,
+    )
+
+    return [
+        {
+            "id": "total-skus",
+            "title": "Total SKUs",
+            "value": total_skus,
+            "status": "Catalog coverage",
+            "change": f"{categories} active categories",
+            "tone": "primary",
+            "icon": "inventory_2",
+            "format": "number",
+        },
+        {
+            "id": "critical-stock",
+            "title": "Critical Stock",
+            "value": critical_stock,
+            "status": "Action required" if critical_stock else "Stable",
+            "change": f"{total_skus and round((critical_stock / total_skus) * 100) or 0}% of catalog",
+            "tone": "danger" if critical_stock else "success",
+            "icon": "warning",
+            "format": "number",
+        },
+        {
+            "id": "low-stock",
+            "title": "Low Stock",
+            "value": low_stock,
+            "status": "Needs review" if low_stock else "Healthy",
+            "change": "Monitor replenishment pipeline",
+            "tone": "warning" if low_stock else "success",
+            "icon": "schedule",
+            "format": "number",
+        },
+        {
+            "id": "active-pos",
+            "title": "Active POs",
+            "value": active_pos,
+            "status": "Procurement active" if active_pos else "No open orders",
+            "change": f"{in_transit_pos} in transit",
+            "tone": "neutral",
+            "icon": "sync",
+            "format": "number",
+        },
+        {
+            "id": "inventory-value",
+            "title": "Inventory Value",
+            "value": inventory_value,
+            "status": "Tracked inventory",
+            "change": f"{total_skus} items valued live",
+            "tone": "success",
+            "icon": "payments",
+            "format": "currency",
+        },
+    ]
+
+
+@app.get("/api/dashboard/shipments")
+def get_dashboard_shipments(db: Session = Depends(database.get_db)):
+    shipments = (
+        db.query(models.Shipment)
+        .order_by(models.Shipment.created_at.desc())
+        .limit(12)
+        .all()
+    )
+
+    results = []
+    for shipment in shipments:
+        status = shipment.status or "SCHEDULED"
+        status_label = status.replace("_", " ").title()
+        progress = round(shipment.progress_percent or 0)
+        if status == "DELAYED":
+            detail = "Requires attention from logistics team"
+        elif status == "DELIVERED":
+            detail = "Completed and closed"
+        elif status == "IN_TRANSIT":
+            detail = "Carrier en route"
+        else:
+            detail = "Awaiting dispatch"
+
+        results.append({
+            "id": str(shipment.id),
+            "trackingNumber": shipment.tracking_number,
+            "source": shipment.origin,
+            "destination": shipment.destination,
+            "status": status_label,
+            "progress": progress,
+            "eta": shipment.eta.isoformat() if shipment.eta else None,
+            "detail": detail,
+            "tone": _shipment_status_tone(status),
+        })
+
+    return results
+
+
+@app.get("/api/dashboard/activities")
+def get_dashboard_activities(db: Session = Depends(database.get_db)):
+    return _collect_dashboard_activities(db)
+
+
+@app.get("/api/dashboard/stats")
+def get_dashboard_stats(db: Session = Depends(database.get_db)):
+    raw_material_products = (
+        db.query(models.Product)
+        .filter(func.lower(models.Product.stage) == "raw material")
+        .all()
+    )
+    raw_material_units = sum(product.current_stock or 0 for product in raw_material_products)
+
+    active_shipments = (
+        db.query(models.Shipment)
+        .filter(models.Shipment.status.in_(["SCHEDULED", "IN_TRANSIT", "DELAYED"]))
+        .all()
+    )
+    average_progress = (
+        round(sum(shipment.progress_percent or 0 for shipment in active_shipments) / len(active_shipments), 1)
+        if active_shipments
+        else 0.0
+    )
+
+    active_carriers = (
+        db.query(models.Shipment.carrier_id)
+        .filter(models.Shipment.carrier_id.isnot(None))
+        .distinct()
+        .count()
+    )
+    total_carriers = db.query(models.Carrier).count()
+
+    return [
+        {
+            "id": "raw-material",
+            "label": "Raw Material Stock",
+            "value": f"{raw_material_units:,} units",
+            "description": f"{len(raw_material_products)} raw material SKUs",
+            "icon": "inventory",
+        },
+        {
+            "id": "delivery-progress",
+            "label": "Avg. Delivery Progress",
+            "value": f"{average_progress}%",
+            "description": f"{len(active_shipments)} active routes",
+            "icon": "local_shipping",
+        },
+        {
+            "id": "active-carriers",
+            "label": "Active Carriers",
+            "value": f"{active_carriers} / {total_carriers}",
+            "description": "Assigned to live shipments",
+            "icon": "factory",
+        },
+    ]
+
+
+@app.get("/api/dashboard/overview")
+def get_dashboard_overview(db: Session = Depends(database.get_db)):
+    products = db.query(models.Product).all()
+    shipments = db.query(models.Shipment).all()
+    orders = db.query(models.Order).all()
+    purchase_orders = db.query(models.PurchaseOrder).all()
+
+    inventory_status_counts = {"Healthy": 0, "Low": 0, "Critical": 0}
+    inventory_stage_counts = {}
+    product_value_rows = []
+
+    for product in products:
+        current_stock = product.current_stock or 0
+        safety_stock = product.safety_stock_level or 0
+        if current_stock < safety_stock:
+            inventory_status = "Critical"
+        elif current_stock < (safety_stock * 1.2):
+            inventory_status = "Low"
+        else:
+            inventory_status = "Healthy"
+
+        inventory_status_counts[inventory_status] += 1
+        stage = product.stage or "Unknown"
+        inventory_stage_counts[stage] = inventory_stage_counts.get(stage, 0) + 1
+
+        inventory_value = round(current_stock * (product.unit_price or 0), 2)
+        product_value_rows.append({
+            "id": str(product.id),
+            "name": product.name,
+            "sku": product.sku,
+            "category": product.category,
+            "value": inventory_value,
+            "stock": current_stock,
+            "status": inventory_status,
+        })
+
+    shipment_status_counts = {}
+    for shipment in shipments:
+        status = (shipment.status or "SCHEDULED").replace("_", " ").title()
+        shipment_status_counts[status] = shipment_status_counts.get(status, 0) + 1
+
+    order_status_counts = {}
+    for order in orders:
+        status = (order.status or "PENDING").replace("_", " ").title()
+        order_status_counts[status] = order_status_counts.get(status, 0) + 1
+
+    po_status_counts = {}
+    for po in purchase_orders:
+        status = (po.status or "DRAFT").replace("_", " ").title()
+        po_status_counts[status] = po_status_counts.get(status, 0) + 1
+
+    top_inventory = sorted(product_value_rows, key=lambda item: item["value"], reverse=True)[:5]
+    critical_products = [item for item in product_value_rows if item["status"] == "Critical"]
+    delayed_shipments = [shipment for shipment in shipments if (shipment.status or "").upper() == "DELAYED"]
+    pending_orders = [order for order in orders if (order.status or "").upper() == "PENDING"]
+
+    executive_briefs = [
+        {
+            "id": "critical-stock",
+            "title": "Critical replenishment pressure",
+            "description": f"{len(critical_products)} SKUs are below safety stock and need procurement attention.",
+            "tone": "danger" if critical_products else "success",
+        },
+        {
+            "id": "shipment-risk",
+            "title": "Logistics watchlist",
+            "description": f"{len(delayed_shipments)} shipments are currently delayed across the network.",
+            "tone": "warning" if delayed_shipments else "success",
+        },
+        {
+            "id": "order-backlog",
+            "title": "Demand backlog",
+            "description": f"{len(pending_orders)} customer orders remain pending fulfillment.",
+            "tone": "neutral" if pending_orders else "success",
+        },
+    ]
+
+    return {
+        "inventoryStatus": [
+            {"id": "healthy", "label": "Healthy", "value": inventory_status_counts["Healthy"], "tone": "success"},
+            {"id": "low", "label": "Low", "value": inventory_status_counts["Low"], "tone": "warning"},
+            {"id": "critical", "label": "Critical", "value": inventory_status_counts["Critical"], "tone": "danger"},
+        ],
+        "inventoryStages": [
+            {
+                "id": stage.lower().replace(" ", "-"),
+                "label": stage,
+                "value": count,
+                "tone": "primary",
+            }
+            for stage, count in sorted(inventory_stage_counts.items(), key=lambda item: item[1], reverse=True)
+        ],
+        "shipmentStatus": [
+            {
+                "id": label.lower().replace(" ", "-"),
+                "label": label,
+                "value": value,
+                "tone": "warning" if label == "Delayed" else "primary",
+            }
+            for label, value in sorted(shipment_status_counts.items(), key=lambda item: item[1], reverse=True)
+        ],
+        "orderStatus": [
+            {
+                "id": label.lower().replace(" ", "-"),
+                "label": label,
+                "value": value,
+                "tone": "neutral",
+            }
+            for label, value in sorted(order_status_counts.items(), key=lambda item: item[1], reverse=True)
+        ],
+        "purchaseOrderStatus": [
+            {
+                "id": label.lower().replace(" ", "-"),
+                "label": label,
+                "value": value,
+                "tone": "neutral",
+            }
+            for label, value in sorted(po_status_counts.items(), key=lambda item: item[1], reverse=True)
+        ],
+        "topInventory": top_inventory,
+        "executiveBriefs": executive_briefs,
     }
 
 

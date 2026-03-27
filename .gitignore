@@ -17,3 +17,11 @@ __pycache__/
 # Databases
 *.db
 supply_chain.db
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Local runtime helpers and logs
+run-logs/
