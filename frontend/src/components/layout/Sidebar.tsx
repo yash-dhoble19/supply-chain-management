@@ -2,6 +2,7 @@ const navItems = [
   { label: "Dashboard", icon: "dashboard", active: true },
   { label: "Production", icon: "precision_manufacturing", active: false },
   { label: "Inventory", icon: "inventory_2", active: false },
+  { label: "Demand Forecasting", icon: "query_stats", active: false },
   { label: "Logistics", icon: "local_shipping", active: false },
   { label: "Analytics", icon: "leaderboard", active: false },
   { label: "Settings", icon: "settings", active: false },
