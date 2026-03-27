@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------
 
 import google.generativeai as genai
-from config import (
+from .config import (
     settings, 
     get_festivals_for_month,
     get_safety_stock_percentage,

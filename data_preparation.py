@@ -7,7 +7,7 @@
 # - Validate data sufficiency (Initial check for basic viability)
 
 import pandas as pd
-from config import settings
+from .config import settings
 
 
 def prepare_category_data(
