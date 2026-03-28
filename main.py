@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, Form
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+from decimal import Decimal
 from openai import OpenAI
 import models, database
 import pandas as pd
@@ -100,6 +101,22 @@ class POCreate(BaseModel):
     quantity: int
     unit_price: float
     priority: str = "Medium"
+
+class QuickPOCreate(BaseModel):
+    insightId: str
+    sku: str
+    itemName: str
+    unitPrice: float
+    quantity: int
+    supplierName: str
+    estimatedLeadTime: Optional[str] = None
+    supplierId: Optional[int] = None
+    productId: Optional[int] = None
+    priority: str = "High"
+    notes: Optional[str] = None
+
+class POStatusUpdate(BaseModel):
+    status: str
 
 # AI Feature Schemas
 class AIProductParseRequest(BaseModel):
@@ -350,6 +367,319 @@ def calculate_supply_chain_health_score(db: Session):
     health_score = 100 - critical_penalty - po_penalty + supplier_bonus
     return max(0, min(100, health_score))
 
+
+PURCHASE_ORDER_TAX_RATE = 18.0
+PURCHASE_ORDER_COMPANY = {
+    "companyName": "ChainMind Supply Intelligence",
+    "companyAddress": "Procurement Operations, Innovation District, Pune, India",
+    "billToCompany": "ChainMind Manufacturing Group",
+    "billToAddress": "Accounts Payable, Global Supply Tower, Pune, India",
+    "contactEmail": "procurement@chainmind.ai",
+}
+
+
+def _generate_po_number(db: Session) -> str:
+    po_count = db.query(models.PurchaseOrder).count()
+    return f"PO-{datetime.now().strftime('%Y%m')}-{po_count + 1:04d}"
+
+
+def _extract_lead_time_days(estimated_lead_time: Optional[str], fallback_days: int) -> int:
+    if estimated_lead_time:
+        match = re.search(r"(\d+)", estimated_lead_time)
+        if match:
+            return max(int(match.group(1)), 1)
+    return max(fallback_days or 1, 1)
+
+
+def _resolve_procurement_context(payload: QuickPOCreate, db: Session):
+    product = None
+    supplier = None
+
+    if payload.productId is not None:
+        product = db.query(models.Product).filter(models.Product.id == payload.productId).first()
+    if product is None:
+        product = db.query(models.Product).filter(models.Product.sku == payload.sku).first()
+
+    if payload.supplierId is not None:
+        supplier = db.query(models.Supplier).filter(models.Supplier.id == payload.supplierId).first()
+    if supplier is None:
+        supplier = db.query(models.Supplier).filter(models.Supplier.name == payload.supplierName).first()
+
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found for purchase order creation")
+    if supplier is None:
+        raise HTTPException(status_code=404, detail="Supplier not found for purchase order creation")
+
+    return product, supplier
+
+
+def _normalize_purchase_order_status(status: str) -> str:
+    normalized = (status or "DRAFT").strip().upper()
+    mapping = {
+        "DRAFT": "draft",
+        "APPROVED": "approved",
+        "IN_TRANSIT": "in_transit",
+        "RECEIVED": "received",
+    }
+    return mapping.get(normalized, "draft")
+
+
+def _wrap_pdf_text(text: str, width: int = 72) -> List[str]:
+    words = text.split()
+    if not words:
+        return [""]
+
+    lines = []
+    current = words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if len(candidate) <= width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
+
+
+def _build_purchase_order_document(db_po: models.PurchaseOrder, db: Session):
+    supplier = db.query(models.Supplier).filter(models.Supplier.id == db_po.supplier_id).first()
+    po_items = db.query(models.POItem).filter(models.POItem.po_id == db_po.id).all()
+
+    items = []
+    subtotal = 0.0
+    for item in po_items:
+        product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
+        rate = float(item.unit_price or 0)
+        quantity = item.quantity_ordered or 0
+        amount = round(quantity * rate, 2)
+        subtotal += amount
+        items.append({
+            "description": product.name if product else (db_po.product_name or "Procurement item"),
+            "sku": product.sku if product else "N/A",
+            "quantity": quantity,
+            "rate": rate,
+            "amount": amount,
+        })
+
+    if not items:
+        fallback_amount = float(db_po.total_amount or db_po.total_value or 0)
+        fallback_rate = round(fallback_amount / max(db_po.quantity or 1, 1), 2) if fallback_amount else 0.0
+        items.append({
+            "description": db_po.product_name or "Procurement item",
+            "sku": "N/A",
+            "quantity": db_po.quantity or 0,
+            "rate": fallback_rate,
+            "amount": fallback_amount,
+        })
+        subtotal = fallback_amount
+
+    subtotal = round(subtotal, 2)
+    tax = round(subtotal * (PURCHASE_ORDER_TAX_RATE / 100), 2)
+    total = round(subtotal + tax, 2)
+    created_at = db_po.created_at or datetime.utcnow()
+    expected_delivery = db_po.expected_delivery or (
+        datetime.combine(db_po.expected_delivery_date, datetime.min.time())
+        if db_po.expected_delivery_date
+        else None
+    )
+
+    return {
+        "id": str(db_po.id),
+        "poNumber": db_po.po_number,
+        "issueDate": created_at.isoformat(),
+        "deliveryDate": expected_delivery.isoformat() if expected_delivery else None,
+        "status": _normalize_purchase_order_status(db_po.status),
+        "supplierName": supplier.name if supplier else "Unknown supplier",
+        "supplierAddress": (
+            f"{supplier.category} sourcing partner hub" if supplier and supplier.category else "Supplier address pending"
+        ),
+        "supplierEmail": supplier.contact_email if supplier else PURCHASE_ORDER_COMPANY["contactEmail"],
+        "companyName": PURCHASE_ORDER_COMPANY["companyName"],
+        "companyAddress": PURCHASE_ORDER_COMPANY["companyAddress"],
+        "billToCompany": PURCHASE_ORDER_COMPANY["billToCompany"],
+        "billToAddress": PURCHASE_ORDER_COMPANY["billToAddress"],
+        "priority": db_po.priority or "Medium",
+        "notes": (
+            f"Auto-generated from procurement insight workflow. Priority: {db_po.priority}. "
+            f"Please confirm supplier availability before dispatch."
+        ),
+        "subtotal": subtotal,
+        "taxRate": PURCHASE_ORDER_TAX_RATE,
+        "tax": tax,
+        "total": total,
+        "items": items,
+        "createdAt": created_at.isoformat(),
+        "previewUrl": f"/api/procurement/purchase-orders/{db_po.id}",
+    }
+
+
+def _pdf_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _pdf_text(commands: List[str], x: float, y: float, text: str, size: int = 12, bold: bool = False):
+    font_name = "F2" if bold else "F1"
+    commands.append(
+        f"BT /{font_name} {size} Tf 1 0 0 1 {x:.2f} {y:.2f} Tm ({_pdf_escape(text)}) Tj ET"
+    )
+
+
+def _build_purchase_order_pdf(document: dict) -> bytes:
+    commands: List[str] = []
+    commands.append("0.09 0.29 0.78 rg 40 720 532 48 re f")
+    commands.append("1 1 1 rg")
+    _pdf_text(commands, 56, 750, document["companyName"], size=19, bold=True)
+    _pdf_text(commands, 56, 732, "Purchase Order", size=11, bold=False)
+    commands.append("0 g")
+
+    _pdf_text(commands, 420, 750, document["poNumber"], size=15, bold=True)
+    _pdf_text(commands, 420, 734, f"Issue Date: {document['issueDate'][:10]}", size=10)
+    if document.get("deliveryDate"):
+        _pdf_text(commands, 420, 720, f"Delivery: {document['deliveryDate'][:10]}", size=10)
+
+    _pdf_text(commands, 40, 690, "Supplier", size=11, bold=True)
+    _pdf_text(commands, 320, 690, "Bill To", size=11, bold=True)
+    commands.append("0.85 G 40 682 m 572 682 l S")
+
+    supplier_lines = [
+        document["supplierName"],
+        document.get("supplierAddress") or "",
+        document.get("supplierEmail") or "",
+    ]
+    bill_lines = [
+        document["billToCompany"],
+        document["billToAddress"],
+        document["companyAddress"],
+    ]
+
+    y_supplier = 664
+    for line in supplier_lines:
+        if line:
+            _pdf_text(commands, 40, y_supplier, line, size=10, bold=(y_supplier == 664))
+            y_supplier -= 16
+
+    y_bill = 664
+    for line in bill_lines:
+        if line:
+            _pdf_text(commands, 320, y_bill, line, size=10, bold=(y_bill == 664))
+            y_bill -= 16
+
+    commands.append("0.95 g 40 576 532 24 re f")
+    commands.append("0 g")
+    _pdf_text(commands, 52, 584, "Description", size=10, bold=True)
+    _pdf_text(commands, 275, 584, "Qty", size=10, bold=True)
+    _pdf_text(commands, 355, 584, "Rate", size=10, bold=True)
+    _pdf_text(commands, 455, 584, "Amount", size=10, bold=True)
+
+    y_row = 556
+    for item in document["items"][:6]:
+        _pdf_text(commands, 52, y_row, f"{item['description']} ({item.get('sku', 'N/A')})", size=10)
+        _pdf_text(commands, 280, y_row, str(item["quantity"]), size=10)
+        _pdf_text(commands, 355, y_row, f"${item['rate']:.2f}", size=10)
+        _pdf_text(commands, 455, y_row, f"${item['amount']:.2f}", size=10)
+        commands.append(f"0.88 G 40 {y_row - 8:.2f} m 572 {y_row - 8:.2f} l S")
+        y_row -= 24
+
+    totals_top = max(y_row - 18, 420)
+    _pdf_text(commands, 360, totals_top, "Subtotal", size=10, bold=True)
+    _pdf_text(commands, 455, totals_top, f"${document['subtotal']:.2f}", size=10)
+    _pdf_text(commands, 360, totals_top - 20, f"Tax ({document['taxRate']:.0f}%)", size=10, bold=True)
+    _pdf_text(commands, 455, totals_top - 20, f"${document['tax']:.2f}", size=10)
+    commands.append("0.09 0.29 0.78 rg 350 368 190 30 re f")
+    commands.append("1 1 1 rg")
+    _pdf_text(commands, 364, 378, "Total", size=11, bold=True)
+    _pdf_text(commands, 455, 378, f"${document['total']:.2f}", size=11, bold=True)
+    commands.append("0 g")
+
+    _pdf_text(commands, 40, 334, "Notes", size=11, bold=True)
+    commands.append("0.90 G 40 326 m 572 326 l S")
+    note_y = 306
+    for line in _wrap_pdf_text(document.get("notes") or "", width=82)[:4]:
+        _pdf_text(commands, 40, note_y, line, size=10)
+        note_y -= 15
+
+    _pdf_text(commands, 40, 104, "Generated by ChainMind Procurement Intelligence", size=9)
+
+    stream = "\n".join(commands).encode("latin-1", "replace")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+        b"<< /Length "
+        + str(len(stream)).encode("latin-1")
+        + b" >>\nstream\n"
+        + stream
+        + b"\nendstream",
+    ]
+
+    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = [0]
+    for index, obj in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{index} 0 obj\n".encode("latin-1"))
+        pdf.extend(obj)
+        pdf.extend(b"\nendobj\n")
+
+    xref_start = len(pdf)
+    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("latin-1"))
+    pdf.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode("latin-1"))
+    pdf.extend(
+        (
+            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref_start}\n%%EOF"
+        ).encode("latin-1")
+    )
+    return bytes(pdf)
+
+
+def _create_purchase_order_record(
+    *,
+    supplier: models.Supplier,
+    product: models.Product,
+    product_name: str,
+    quantity: int,
+    unit_price: float,
+    priority: str,
+    estimated_lead_time: Optional[str],
+    db: Session,
+):
+    po_number = _generate_po_number(db)
+    lead_time_days = _extract_lead_time_days(estimated_lead_time, supplier.delivery_speed_days)
+    expected_delivery = datetime.utcnow() + timedelta(days=lead_time_days)
+    total_value = round(quantity * unit_price, 2)
+
+    db_po = models.PurchaseOrder(
+        po_number=po_number,
+        supplier_id=supplier.id,
+        product_name=product_name,
+        quantity=quantity,
+        total_value=total_value,
+        total_amount=Decimal(str(total_value)),
+        priority=priority.title(),
+        status="DRAFT",
+        expected_delivery=expected_delivery,
+        expected_delivery_date=expected_delivery.date(),
+    )
+    db.add(db_po)
+    db.commit()
+    db.refresh(db_po)
+
+    po_item = models.POItem(
+        po_id=db_po.id,
+        product_id=product.id,
+        quantity_ordered=quantity,
+        unit_price=Decimal(str(round(unit_price, 2))),
+    )
+    db.add(po_item)
+    db.commit()
+    db.refresh(db_po)
+    return db_po
+
 def calculate_supplier_score(supplier, product_price=None):
     """
     Smart supplier scoring algorithm:
@@ -397,79 +727,31 @@ def find_best_supplier_for_product(product, db: Session):
             "supplier": supplier,
             "score": score
         })
-    
-    # Sort by score descending
-    supplier_scores.sort(key=lambda x: x["score"], reverse=True)
-    return supplier_scores[0]["supplier"] if supplier_scores else None
-
 def generate_ai_morning_briefing(health_score, critical_count, pending_pos, db: Session):
-    """
-    Uses LLM to generate a strategic morning briefing
-    """
     products = db.query(models.Product).all()
-    critical_products = [p.name for p in products if p.current_stock < (p.optimal_stock_level * 0.2)][:3]
+    critical_products = [p.name for p in products if p.current_stock < (p.optimal_stock_level * 0.2)][:2]
     
-    prompt = f"""
-    You are a Supply Chain Director AI. Generate a comprehensive morning briefing (detailed analysic and one paragraph ).
-    
-    Data:
-    - Health Score: {health_score}/100
-    - Critical Items: {critical_count} (Examples: {', '.join(critical_products) if critical_products else 'None'})
-    - Pending POs: {pending_pos}
-    
-    Requirements:
-    - Provide a detailed analysis (need  one paragraph explaintion)
-    - Include executive summary
-    - Discuss health score implications
-    - Analyze critical items and their impact
-    - Review pending POs and their urgency
-    - Provide actionable recommendations
-    - Include strategic insights for the day
-    
-    Tone: Professional, actionable, and strategic. Highlight the most urgent concern first, then provide comprehensive analysis.
-    """
-    
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content
-    except openai.RateLimitError:
-        return "Strategic briefing is currently unavailable due to AI rate limits. Please check critical items manually."
-    except Exception:
-        return "Market conditions are stable. Review critical items and expedite pending orders. Health score indicates attention needed in supply chain operations. Prioritize addressing critical inventory levels and monitor pending purchase orders closely."
+    if health_score < 60:
+        status_text = "Supply chain health is highly critical."
+    elif health_score < 80:
+        status_text = "Supply chain health requires attention."
+    else:
+        status_text = "Supply chain operations are stable."
+        
+    critical_str = f" Immediate action needed on {', '.join(critical_products)}." if critical_products else ""
+    return f"{status_text} Currently tracking {pending_pos} pending purchase orders. You have {critical_count} critical inventory items.{critical_str}"
 
-def generate_urgency_reasoning(product, supplier):
-    """
-    Uses LLM to explain WHY a product needs urgent attention
-    """
+def generate_urgency_reasoning(product, supplier, has_active_po=False, po_status=None):
     stock_pct = (product.current_stock / product.optimal_stock_level * 100) if product.optimal_stock_level > 0 else 0
-    
-    prompt = f"""
-    Generate a 1-2 sentence urgent reasoning for procurement.
-    
-    Product: {product.name}
-    Current Stock: {product.current_stock} ({stock_pct:.0f}% of optimal)
-    Best Supplier: {supplier.name} ({supplier.delivery_speed_days} days delivery)
-    
-    Be direct and actionable.
-    """
-    
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content
-    except openai.RateLimitError:
-        return "AI Rate Limit Reached. Item requires urgent attention."
-    except Exception:
-        return f"Stock critically low at {stock_pct:.0f}%. Immediate replenishment required."
-
-# --- 4. API ENDPOINTS ---
-
-# --- NEW: PROCUREMENT ENDPOINTS ---
+    if has_active_po:
+        verb = "Approved" if po_status == "APPROVED" else "In Transit" if po_status == "IN_TRANSIT" else "Drafted"
+        return f"A Purchase Order is currently {verb}. Stock remains at {stock_pct:.0f}% pending delivery."
+    if stock_pct < 20:
+        return f"Stock critically low at {stock_pct:.0f}%. We recommend immediate replenishment from {supplier.name}."
+    elif stock_pct < 35:
+        return f"Stock dropping ({stock_pct:.0f}%). Consider ordering from {supplier.name} soon to avoid stockouts."
+    else:
+        return f"Stock is stable at {stock_pct:.0f}%."
 
 @app.get("/procurement/health")
 def get_procurement_health(db: Session = Depends(database.get_db)):
@@ -921,6 +1203,450 @@ def generate_supplier_negotiation_email(supplier_id: int, db: Session = Depends(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Email Generation Failed: {str(e)}")
+
+
+def _build_procurement_supplier_analysis(db: Session):
+    suppliers = db.query(models.Supplier).all()
+    analysis = []
+
+    for supplier in suppliers:
+        pos = db.query(models.PurchaseOrder).filter(
+            models.PurchaseOrder.supplier_id == supplier.id
+        ).all()
+
+        total_pos = len(pos)
+        completed_pos = len([po for po in pos if po.status == "RECEIVED"])
+        on_time_rate = round((completed_pos / total_pos * 100), 1) if total_pos else 0.0
+        overall_score = calculate_supplier_score(supplier)
+
+        if supplier.reliability_score >= 90 and on_time_rate >= 85:
+            verdict = "Partner"
+        elif supplier.reliability_score < 70 or on_time_rate < 60:
+            verdict = "At Risk"
+        else:
+            verdict = "Vetted"
+
+        quality_proxy = round(
+            min(100.0, ((supplier.reliability_score or 0) * 0.7) + (on_time_rate * 0.3)),
+            1,
+        )
+
+        analysis.append({
+            "id": str(supplier.id),
+            "name": supplier.name,
+            "location": supplier.category or "Location pending",
+            "verdict": verdict,
+            "score": overall_score,
+            "reliability": round(supplier.reliability_score or 0, 1),
+            "onTimeDelivery": on_time_rate,
+            "qualityRate": quality_proxy,
+            "deliverySpeedDays": supplier.delivery_speed_days,
+            "pricePerUnit": round(supplier.price_per_unit or 0, 2),
+        })
+
+    return analysis
+
+
+def _build_procurement_insights(db: Session, limit: int = 10):
+    products = db.query(models.Product).all()
+    insights = []
+
+    for product in products:
+        if product.optimal_stock_level <= 0:
+            continue
+
+        best_supplier = find_best_supplier_for_product(product, db)
+        if not best_supplier:
+            continue
+
+        # Get POs associated with this product
+        active_pos = db.query(models.PurchaseOrder).join(models.POItem).filter(
+            models.POItem.product_id == product.id,
+            models.PurchaseOrder.status.in_(["DRAFT", "APPROVED", "IN_TRANSIT"])
+        ).order_by(models.PurchaseOrder.created_at.desc()).all()
+        
+        has_active_po = len(active_pos) > 0
+        latest_po = active_pos[0] if has_active_po else None
+        
+        incoming_qty = sum(item.quantity_ordered for po in active_pos for item in po.items if item.product_id == product.id)
+        effective_stock_pct = ((product.current_stock + incoming_qty) / product.optimal_stock_level * 100)
+        stock_pct = (product.current_stock / product.optimal_stock_level * 100)
+        
+        if effective_stock_pct >= 60 and not has_active_po:
+            continue # Already sufficiently stocked
+            
+        if effective_stock_pct < 20:
+            priority = "urgent"
+        elif effective_stock_pct < 35:
+            priority = "high"
+        else:
+            priority = "monitor"
+
+        if has_active_po:
+            statusstr = latest_po.status
+            if statusstr == "DRAFT":
+                action_label = "PO Drafted"
+            elif statusstr == "APPROVED":
+                action_label = "PO Approved"
+            elif statusstr == "IN_TRANSIT":
+                action_label = "In Transit"
+            else:
+                action_label = "PO Active"
+            action_type = "view_po"
+        else:
+            if priority in ["urgent", "high"]:
+                action_label = "Quick PO"
+                action_type = "quick_po"
+            else:
+                action_label = "Draft Email"
+                action_type = "draft_email"
+
+        replenishment_qty = max(0, product.optimal_stock_level - (product.current_stock + incoming_qty))
+        if replenishment_qty == 0 and has_active_po:
+            replenishment_qty = incoming_qty
+            
+        supplier_unit_price = round(best_supplier.price_per_unit or product.unit_price or 0, 2)
+        supplier_score = calculate_supplier_score(best_supplier, supplier_unit_price)
+        estimated_cost = round(replenishment_qty * supplier_unit_price, 2)
+
+        reasoning = generate_urgency_reasoning(
+            product, best_supplier, has_active_po, latest_po.status if latest_po else None
+        )
+
+        insights.append({
+            "id": str(product.id),
+            "productId": product.id,
+            "supplierId": best_supplier.id,
+            "sku": product.sku,
+            "title": product.name,
+            "priority": priority,
+            "reasoning": reasoning,
+            "unitPrice": supplier_unit_price,
+            "supplierScore": supplier_score,
+            "estimatedLeadTime": f"{best_supplier.delivery_speed_days} Days",
+            "estimatedLeadTimeDays": best_supplier.delivery_speed_days,
+            "replenishmentQty": replenishment_qty,
+            "actionLabel": action_label,
+            "actionType": action_type,
+            "supplierName": best_supplier.name,
+            "estimatedCost": estimated_cost,
+        })
+
+    priority_order = {"urgent": 0, "high": 1, "monitor": 2, "normal": 3}
+    insights.sort(key=lambda item: (priority_order[item["priority"]], item["estimatedLeadTimeDays"]))
+    return insights[:limit]
+
+
+@app.get("/api/procurement/summary")
+def get_procurement_summary(db: Session = Depends(database.get_db)):
+    health_score = calculate_supply_chain_health_score(db)
+    products = db.query(models.Product).all()
+    suppliers = db.query(models.Supplier).all()
+    
+    # Calculate pending correctly
+    pending_pos = db.query(models.PurchaseOrder).filter(
+        models.PurchaseOrder.status == "DRAFT"
+    ).count()
+    approved_pos = db.query(models.PurchaseOrder).filter(
+        models.PurchaseOrder.status.in_(["APPROVED", "IN_TRANSIT"])
+    ).count()
+
+    # Calculate critical items accounting for expected deliveries
+    critical_items = 0
+    for product in products:
+        incoming_qty = sum(item.quantity_ordered for item in product.po_items if item.purchase_order and item.purchase_order.status in ["DRAFT", "APPROVED", "IN_TRANSIT"])
+        if (product.current_stock + incoming_qty) < (product.optimal_stock_level * 0.2):
+            critical_items += 1
+
+    insights = _build_procurement_insights(db, limit=12)
+
+    product_lookup = {product.id: product for product in products}
+    savings_to_date = round(
+        sum(
+            max(0, (product_lookup[insight["productId"]].unit_price or 0) - insight["unitPrice"]) * insight["replenishmentQty"]
+            for insight in insights
+            if insight["productId"] in product_lookup and insight["actionType"] == "quick_po"
+        ),
+        2,
+    )
+
+    avg_supplier_lead = (
+        round(sum(s.delivery_speed_days or 0 for s in suppliers) / len(suppliers))
+        if suppliers
+        else 0
+    )
+    fastest_lead = min((s.delivery_speed_days or 0 for s in suppliers), default=avg_supplier_lead)
+    lead_opportunity = max(avg_supplier_lead - fastest_lead, 0)
+    projected_spend = sum(insight["estimatedCost"] for insight in insights if insight["actionType"] == "quick_po")
+    savings_pct = round((savings_to_date / max(projected_spend, 1)) * 100, 1)
+
+    status = "optimal" if health_score >= 80 else "warning" if health_score >= 60 else "critical"
+
+    return {
+        "systemHealthScore": round(health_score),
+        "healthStatus": status,
+        "aiBriefing": generate_ai_morning_briefing(health_score, critical_items, pending_pos, db),
+        "criticalItems": critical_items,
+        "pendingPOs": pending_pos,
+        "savingsToDate": savings_to_date,
+        "savingsChange": f"+{savings_pct}% projected",
+        "leadTimeAverage": f"{avg_supplier_lead}d",
+        "leadTimeChange": f"-{lead_opportunity}d opportunity" if lead_opportunity else "Stable lead time",
+    }
+
+
+@app.get("/api/procurement/insights")
+def get_procurement_insights(priority: Optional[str] = None, db: Session = Depends(database.get_db)):
+    insights = _build_procurement_insights(db, limit=12)
+    if priority and priority.lower() != "all":
+        insights = [insight for insight in insights if insight["priority"] == priority.lower()]
+    return insights
+
+
+@app.get("/api/procurement/suppliers/overview")
+def get_procurement_suppliers_overview(db: Session = Depends(database.get_db)):
+    analysis = _build_procurement_supplier_analysis(db)
+
+    avg_reliability = round(sum(item["reliability"] for item in analysis) / len(analysis), 1) if analysis else 0.0
+    on_time_delivery = round(sum(item["onTimeDelivery"] for item in analysis) / len(analysis), 1) if analysis else 0.0
+    quality_rate = round(sum(item["qualityRate"] for item in analysis) / len(analysis), 1) if analysis else 0.0
+    average_score = round(sum(item["score"] for item in analysis) / len(analysis), 1) if analysis else 0.0
+
+    if average_score >= 95:
+        esg_compliance = "A+"
+    elif average_score >= 90:
+        esg_compliance = "A"
+    elif average_score >= 80:
+        esg_compliance = "B+"
+    else:
+        esg_compliance = "B"
+
+    return {
+        "overview": {
+            "avgReliability": avg_reliability,
+            "onTimeDelivery": on_time_delivery,
+            "qualityRate": quality_rate,
+            "esgCompliance": esg_compliance,
+        },
+        "suppliers": analysis,
+    }
+
+
+@app.get("/api/procurement/suppliers/top-performers")
+def get_procurement_top_performers(db: Session = Depends(database.get_db)):
+    analysis = sorted(_build_procurement_supplier_analysis(db), key=lambda item: item["score"], reverse=True)[:3]
+
+    performers = []
+    for index, supplier in enumerate(analysis, start=1):
+        metric_label = (
+            f"{supplier['qualityRate']}% Quality"
+            if index == 1
+            else f"{supplier['onTimeDelivery']}% On-time"
+            if index == 2
+            else f"{supplier['reliability']}% Reliability"
+        )
+        performers.append({
+            "id": supplier["id"],
+            "rank": index,
+            "name": supplier["name"],
+            "metricLabel": metric_label,
+            "score": supplier["score"],
+        })
+
+    return performers
+
+
+@app.get("/api/procurement/spend-optimization")
+def get_procurement_spend_optimization(db: Session = Depends(database.get_db)):
+    insights = _build_procurement_insights(db, limit=20)
+    product_lookup = {product.id: product for product in db.query(models.Product).all()}
+
+    baseline_spend = 0.0
+    optimized_spend = 0.0
+    for insight in insights:
+        product = product_lookup.get(insight["productId"])
+        if not product:
+            continue
+        baseline_spend += insight["replenishmentQty"] * (product.unit_price or 0)
+        optimized_spend += insight["estimatedCost"]
+
+    total_value = round(max(0, baseline_spend - optimized_spend), 2)
+    budget_pool = optimized_spend + max(total_value * 4, optimized_spend * 0.2, 1)
+    budget_utilization = round((optimized_spend / budget_pool) * 100, 1) if budget_pool else 0.0
+
+    return {
+        "totalValue": total_value,
+        "yoyChange": f"+{round((total_value / max(baseline_spend, 1)) * 100, 1)}% projected",
+        "budgetUtilization": budget_utilization,
+        "buttonLabel": "Download Report",
+    }
+
+
+@app.get("/api/procurement/purchase-orders")
+def get_procurement_purchase_orders(
+    limit: Optional[int] = None,
+    page: int = 1,
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    supplier: Optional[str] = None,
+    search: Optional[str] = None,
+    date_range: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    sort: str = "latest",
+    db: Session = Depends(database.get_db),
+):
+    query = db.query(models.PurchaseOrder)
+    supplier_joined = False
+
+    if status:
+        normalized_status = status.strip().replace(" ", "_").upper()
+        query = query.filter(models.PurchaseOrder.status == normalized_status)
+
+    if priority:
+        normalized_priority = priority.strip().lower()
+        query = query.filter(func.lower(models.PurchaseOrder.priority) == normalized_priority)
+
+    if supplier:
+        supplier_joined = True
+        query = query.join(models.Supplier).filter(func.lower(models.Supplier.name) == supplier.strip().lower())
+
+    if search:
+        pattern = f"%{search.strip().lower()}%"
+        if not supplier_joined:
+            query = query.join(models.Supplier, isouter=True)
+        query = query.filter(
+            func.lower(models.PurchaseOrder.po_number).like(pattern)
+            | func.lower(func.coalesce(models.PurchaseOrder.product_name, "")).like(pattern)
+            | func.lower(func.coalesce(models.Supplier.name, "")).like(pattern)
+        )
+
+    now_utc = datetime.utcnow()
+    if date_range:
+        range_key = date_range.strip().lower()
+        if range_key == "today":
+            start_dt = datetime.combine(now_utc.date(), datetime.min.time())
+            query = query.filter(models.PurchaseOrder.created_at >= start_dt)
+        elif range_key in {"7d", "30d"}:
+            days = 7 if range_key == "7d" else 30
+            query = query.filter(models.PurchaseOrder.created_at >= (now_utc - timedelta(days=days)))
+
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid start_date format") from exc
+        query = query.filter(models.PurchaseOrder.created_at >= start_dt)
+
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid end_date format") from exc
+        query = query.filter(models.PurchaseOrder.created_at <= end_dt + timedelta(days=1))
+
+    if sort == "oldest":
+        query = query.order_by(models.PurchaseOrder.created_at.asc())
+    else:
+        query = query.order_by(models.PurchaseOrder.created_at.desc())
+
+    if limit is not None:
+        safe_limit = max(1, min(limit, 100))
+        safe_page = max(page, 1)
+        query = query.offset((safe_page - 1) * safe_limit).limit(safe_limit)
+    pos = query.all()
+    lifecycle_order = {
+        "DRAFT": "draft",
+        "APPROVED": "approved",
+        "IN_TRANSIT": "in_transit",
+        "RECEIVED": "received",
+    }
+
+    results = []
+    for po in pos:
+        supplier = db.query(models.Supplier).filter(models.Supplier.id == po.supplier_id).first()
+        results.append({
+            "id": str(po.id),
+            "poNumber": po.po_number,
+            "title": po.product_name or "Procurement item",
+            "supplierName": supplier.name if supplier else "Unknown supplier",
+            "status": (po.status or "DRAFT").replace("_", " ").title(),
+            "priority": (po.priority or "Medium").title(),
+            "lifecycleStage": lifecycle_order.get(po.status or "DRAFT", "draft"),
+            "createdAt": po.created_at.isoformat() if po.created_at else None,
+            "expectedDelivery": po.expected_delivery.isoformat() if po.expected_delivery else None,
+        })
+
+    return results
+
+
+@app.post("/api/procurement/purchase-orders/create")
+def create_procurement_purchase_order(payload: QuickPOCreate, db: Session = Depends(database.get_db)):
+    product, supplier = _resolve_procurement_context(payload, db)
+    db_po = _create_purchase_order_record(
+        supplier=supplier,
+        product=product,
+        product_name=payload.itemName,
+        quantity=payload.quantity,
+        unit_price=payload.unitPrice,
+        priority=payload.priority,
+        estimated_lead_time=payload.estimatedLeadTime,
+        db=db,
+    )
+
+    created_at = db_po.created_at or datetime.utcnow()
+    return {
+        "id": str(db_po.id),
+        "poNumber": db_po.po_number,
+        "status": _normalize_purchase_order_status(db_po.status),
+        "createdAt": created_at.isoformat(),
+        "previewUrl": f"/api/procurement/purchase-orders/{db_po.id}",
+    }
+
+
+@app.get("/api/procurement/purchase-orders/{po_id}")
+def get_procurement_purchase_order(po_id: int, db: Session = Depends(database.get_db)):
+    db_po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id).first()
+    if not db_po:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    return _build_purchase_order_document(db_po, db)
+
+
+@app.put("/api/procurement/purchase-orders/{po_id}/status")
+def update_procurement_purchase_order_status(
+    po_id: int,
+    payload: POStatusUpdate,
+    db: Session = Depends(database.get_db),
+):
+    status = (payload.status or "").strip().upper()
+    valid_statuses = ["DRAFT", "APPROVED", "IN_TRANSIT", "RECEIVED"]
+    if status not in valid_statuses:
+        raise HTTPException(status_code=400, detail="Invalid purchase order status")
+
+    db_po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id).first()
+    if not db_po:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+
+    db_po.status = status
+    db.commit()
+    db.refresh(db_po)
+    return _build_purchase_order_document(db_po, db)
+
+
+@app.get("/api/procurement/purchase-orders/{po_id}/pdf")
+def download_procurement_purchase_order_pdf(po_id: int, db: Session = Depends(database.get_db)):
+    db_po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == po_id).first()
+    if not db_po:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+
+    document = _build_purchase_order_document(db_po, db)
+    pdf_bytes = _build_purchase_order_pdf(document)
+    filename = f"{document['poNumber']}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 @app.post("/ai/pricing_analysis")
 def analyze_pricing_strategy(req: PricingRequest):

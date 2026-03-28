@@ -8,6 +8,7 @@ import { TopInventoryTable } from "../components/dashboard/TopInventoryTable";
 import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
 import { useDashboardData } from "../hooks/useDashboardData";
+import type { AppPage } from "../types/app.types";
 import { matchesDashboardQuery } from "../utils/formatters";
 
 function MetricSkeleton() {
@@ -64,7 +65,12 @@ function SnapshotGroup({
   );
 }
 
-export function Dashboard() {
+interface DashboardProps {
+  activePage: AppPage;
+  onNavigate: (page: AppPage) => void;
+}
+
+export function Dashboard({ activePage, onNavigate }: DashboardProps) {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [visibleShipments, setVisibleShipments] = useState(4);
@@ -92,15 +98,22 @@ export function Dashboard() {
 
   return (
     <div className="min-h-screen bg-background text-on-surface">
-      <Sidebar isOpen={isSidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        activePage={activePage}
+        onNavigate={onNavigate}
+      />
 
       <main className="min-h-screen lg:ml-[240px]">
         <Header
+          title="Executive Dashboard"
           lastUpdated={lastUpdated}
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
           onRefresh={refetch}
           onMenuClick={() => setSidebarOpen(true)}
+          searchPlaceholder="Search intel..."
         />
 
         <div className="space-y-8 p-4 sm:p-6 lg:p-8">

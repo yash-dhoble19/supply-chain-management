@@ -1,19 +1,24 @@
-const navItems = [
-  { label: "Dashboard", icon: "dashboard", active: true },
-  { label: "AI TOOLS", icon: "auto_awesome", active: false },
-  { label: "Inventory", icon: "inventory_2", active: false },
-  { label: "Demand Forecasting", icon: "query_stats", active: false },
-  { label: "Logistics", icon: "local_shipping", active: false },
-  { label: "Analytics", icon: "leaderboard", active: false },
-  { label: "Settings", icon: "settings", active: false },
+import type { AppPage } from "../../types/app.types";
+
+const navItems: Array<{ label: string; icon: string; page?: AppPage }> = [
+  { label: "Dashboard", icon: "dashboard", page: "dashboard" },
+  { label: "AI TOOLS", icon: "auto_awesome" },
+  { label: "Inventory", icon: "inventory_2" },
+  { label: "Demand Forecasting", icon: "query_stats" },
+  { label: "Logistics", icon: "local_shipping" },
+  { label: "Procurement Intelligence", icon: "handshake", page: "procurement" },
+  { label: "Purchase Orders", icon: "receipt_long", page: "purchaseOrders" },
+  { label: "Settings", icon: "settings" },
 ];
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  activePage: AppPage;
+  onNavigate: (page: AppPage) => void;
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, activePage, onNavigate }: SidebarProps) {
   return (
     <>
       <div
@@ -47,8 +52,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             <button
               key={item.label}
               type="button"
+              onClick={() => {
+                if (item.page) {
+                  onNavigate(item.page);
+                  onClose();
+                }
+              }}
               className={`flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium transition-all duration-200 ${
-                item.active
+                item.page === activePage
                   ? "border-l-4 border-primary bg-slate-800/50 text-blue-400"
                   : "text-slate-400 hover:bg-slate-800/30 hover:text-slate-200"
               }`}

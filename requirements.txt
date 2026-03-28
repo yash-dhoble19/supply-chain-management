@@ -1,6 +1,6 @@
 # Core Backend Dependencies
 fastapi
-uvicorn
+uvicorn[standard]
 sqlalchemy
 pydantic
 python-dotenv
