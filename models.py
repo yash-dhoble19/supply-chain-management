@@ -286,3 +286,19 @@ class Shipment(Base):
     
     carrier = relationship("Carrier", back_populates="shipments")
     driver = relationship("Driver", back_populates="shipments")
+
+# =====================================================
+# 10. AI INSIGHTS (Stored Intelligence)
+# =====================================================
+class AIInsight(Base):
+    __tablename__ = "ai_insights"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entity_type = Column(String, index=True, nullable=False) # e.g. "FORECAST", "ORDER"
+    entity_id = Column(String, index=True, nullable=False)   # ID of the related record
+    insight_type = Column(String, nullable=False)            # e.g. "RISK", "SUMMARY"
+    
+    content = Column(Text, nullable=False)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

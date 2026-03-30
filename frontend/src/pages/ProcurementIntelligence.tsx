@@ -98,9 +98,9 @@ export function ProcurementIntelligence({
     )
     .slice(0, 4);
 
-  const draftCount = recentPurchaseOrders.filter((order) => order.lifecycleStage === "draft").length;
-  const approvedCount = recentPurchaseOrders.filter((order) => order.lifecycleStage === "approved").length;
-  const inTransitCount = recentPurchaseOrders.filter((order) => order.lifecycleStage === "in_transit").length;
+  const draftCount = purchaseOrders.filter((order) => order.lifecycleStage === "draft").length;
+  const approvedCount = purchaseOrders.filter((order) => order.lifecycleStage === "approved").length;
+  const inTransitCount = purchaseOrders.filter((order) => order.lifecycleStage === "in_transit").length;
 
   async function goToPurchaseOrdersPage() {
     onNavigate("purchaseOrders");

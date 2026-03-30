@@ -316,96 +316,14 @@ Pattern Detected: {seasonality.get('interpretation', 'No significant patterns')}
     
     justification_text = " and ".join(buffer_justification)
     
-    prompt += f"""
-
-=== INVENTORY PLANNING ===
-Recommended Target: {target_inventory:,} units
-Buffer Percentage: {int(total_buffer * 100)}% above forecast
-Festival Lead Time: {settings.festival_preparation_weeks} weeks before peak events
-
-=====================================
-
-Based on ALL the data above, write a professional executive insight with these sections:
-
-**PARAGRAPH 1 - Current Situation & Forecast Interpretation (3-4 sentences)**
-Start by clearly stating what the forecast shows. Explain the trend direction and what the numbers mean. If there are festivals but demand is declining (or vice versa), explain this apparent contradiction naturally. When discussing confidence: if the range is very narrow (like {lower_bound:,} to {upper_bound:,}), explain this indicates high model certainty based on stable historical patterns. If the range is wide, discuss the uncertainty factors.
-
-**PARAGRAPH 2 - Key Drivers & Influencing Factors (4-5 sentences)**
-Analyze which factors are influencing this forecast and HOW they work. Connect the external factors, seasonal patterns, and festivals to the forecast outcome. Explain cause-and-effect relationships. If multiple factors are present, explain how they interact or which ones dominate. IMPORTANT: If "New Product Launch" is mentioned in external factors, discuss both potential positive (category expansion) AND negative (cannibalization) effects.
-
-**PARAGRAPH 3 - Risks & Considerations (2-4 sentences)**
-Discuss ANY significant considerations that could impact outcomes. This includes:
-- External risks (supply chain, availability, economic uncertainty)
-- Product launch risks (cannibalization vs. category growth)
-- Demand variability concerns (if CV is high)
-- Data limitations (if historical data is limited)
-Skip this paragraph ONLY if there are truly no risks or considerations to discuss.
-
-**PARAGRAPH 4 - Inventory & Action Recommendations (3-4 sentences)**
-Recommend the {target_inventory:,} unit target and explain why this buffer is appropriate given the specific factors present. If festivals exist, mention timing (e.g., "{settings.festival_preparation_weeks} weeks before [festival name]"). End with a monitoring recommendation that's specific to the risks identified.
-
-WRITING GUIDELINES:
-- Write in natural, professional business language
-- Be conversational but authoritative
-- Each sentence should add new insight
-- Total length: 200-300 words
-- Use actual data from above - don't make up facts
-- Be honest about uncertainty where it exists
-- Focus on actionable insights
-- Ensure all 4 paragraphs are present unless risks truly don't exist
-
-Write the insight now:"""
-
-    try:
-        model = genai.GenerativeModel(settings.gemini_model)
-        
-        # Generate content with increased timeout via generation config
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.6,  # Higher for more natural, interpretive language
-                max_output_tokens=800,  # More room for natural expression
-            )
-        )
-        
-        insight = response.text.strip()
-        
-        # Add context footer only if significant factors exist
-        context_items = []
-        if festivals:
-            context_items.append(f"Festivals: {', '.join([f.split('(')[0].strip() for f in festivals[:2]])}")
-        if external_factors:
-            active_factors = []
-            if external_factors.get("upcoming_promotion"):
-                active_factors.append("Promotion")
-            if external_factors.get("supply_chain_disruption") or external_factors.get("availability_issues"):
-                active_factors.append("Supply Risk")
-            if external_factors.get("new_product_launch"):
-                active_factors.append("New Launch")
-            if external_factors.get("economic_uncertainty") and external_factors.get("economic_uncertainty") != "None":
-                active_factors.append(f"{external_factors.get('economic_uncertainty')} Economic Uncertainty")
-            if active_factors:
-                context_items.append(f"Factors: {', '.join(active_factors[:3])}")
-        
-        if context_items:
-            insight += f"\n\n**Context:** {' | '.join(context_items)}"
-        
-        return insight
-    
-    except Exception as e:
-        # Log the error for debugging
-        import traceback
-        print(f"⚠️ Gemini API Error: {str(e)}")
-        print(traceback.format_exc())
-        print("📝 Using fallback insight generation (high-quality alternative)...")
-        
-        return _generate_fallback_insight(
-            category, forecasted_units, mom_change, trend, month,
-            lower_bound, upper_bound, historical_avg, yoy_change,
-            data_months, confidence, region, festivals, seasonality,
-            warnings, coefficient_of_variation, external_factors,
-            target_inventory, total_buffer, justification_text
-        )
+    # Return completely deterministic insight instead of blocking AI call
+    return _generate_fallback_insight(
+        category, forecasted_units, mom_change, trend, month,
+        lower_bound, upper_bound, historical_avg, yoy_change,
+        data_months, confidence, region, festivals, seasonality,
+        warnings, coefficient_of_variation, external_factors,
+        target_inventory, total_buffer, justification_text
+    )
 
 
 def _generate_fallback_insight(
