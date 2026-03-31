@@ -73,6 +73,23 @@ export async function apiPut<TResponse, TPayload>(
   return (await response.json()) as TResponse;
 }
 
+export async function apiDelete<TResponse>(path: string, signal?: AbortSignal): Promise<TResponse> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "DELETE",
+    headers: {
+      Accept: "application/json",
+    },
+    signal,
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new ApiError(message || `Request failed for ${path}`, response.status);
+  }
+
+  return (await response.json()) as TResponse;
+}
+
 export async function apiDownload(path: string, signal?: AbortSignal): Promise<{ blob: Blob; filename?: string }> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "GET",

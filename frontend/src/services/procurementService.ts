@@ -22,6 +22,16 @@ interface PurchaseOrderQueryOptions {
 }
 
 export const procurementService = {
+  getBootstrap: (signal?: AbortSignal) =>
+    apiGet<{
+      summary: ProcurementSummary | null;
+      insights: ProcurementInsight[];
+      supplierOverview: SupplierOverviewResponse["overview"] | null;
+      supplierRows: SupplierOverviewResponse["suppliers"];
+      topPerformers: TopPerformer[];
+      spendOptimization: SpendOptimization | null;
+      purchaseOrders: PurchaseOrder[];
+    }>("/api/procurement/bootstrap", signal),
   getSummary: (signal?: AbortSignal) => apiGet<ProcurementSummary>("/api/procurement/summary", signal),
   getInsights: (signal?: AbortSignal) => apiGet<ProcurementInsight[]>("/api/procurement/insights", signal),
   getSuppliersOverview: (signal?: AbortSignal) =>

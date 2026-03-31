@@ -1,1 +1,1 @@
-export type AppPage = "dashboard" | "procurement" | "purchaseOrders";
+export type AppPage = "dashboard" | "inventory" | "logistics" | "procurement" | "purchaseOrders";

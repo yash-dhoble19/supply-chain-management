@@ -3,9 +3,9 @@ import type { AppPage } from "../../types/app.types";
 const navItems: Array<{ label: string; icon: string; page?: AppPage }> = [
   { label: "Dashboard", icon: "dashboard", page: "dashboard" },
   { label: "AI TOOLS", icon: "auto_awesome" },
-  { label: "Inventory", icon: "inventory_2" },
+  { label: "Inventory", icon: "inventory_2", page: "inventory" },
   { label: "Demand Forecasting", icon: "query_stats" },
-  { label: "Logistics", icon: "local_shipping" },
+  { label: "Logistics", icon: "local_shipping", page: "logistics" },
   { label: "Procurement Intelligence", icon: "handshake", page: "procurement" },
   { label: "Purchase Orders", icon: "receipt_long", page: "purchaseOrders" },
   { label: "Settings", icon: "settings" },

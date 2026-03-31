@@ -5,10 +5,15 @@ from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 import models
-from services.product_service import get_inventory_status
+from services.product_service import get_inventory_status, get_inventory_metrics
 
 
 def get_dashboard_metrics(db: Session) -> list[dict]:
+    # must be loaded from DB using explicit SUM operations
+    metrics_data = get_inventory_metrics(db)
+    total_items = metrics_data.get("total_items", 0)
+    total_value = metrics_data.get("total_value", 0.0)
+
     products = db.query(models.Product).all()
     purchase_orders = db.query(models.PurchaseOrder).all()
 
@@ -22,7 +27,7 @@ def get_dashboard_metrics(db: Session) -> list[dict]:
     )
     active_pos = sum(1 for po in purchase_orders if po.status != "RECEIVED")
     in_transit_pos = sum(1 for po in purchase_orders if po.status == "IN_TRANSIT")
-    inventory_value = round(sum((p.current_stock or 0) * (p.unit_price or 0) for p in products), 2)
+    inventory_value = total_value
 
     return [
         {"id": "total-skus", "title": "Total SKUs", "value": total_skus, "status": "Catalog coverage",
@@ -75,7 +80,6 @@ def get_dashboard_shipments(db: Session) -> list[dict]:
 def get_dashboard_activities(db: Session, limit: int = 8) -> list[dict]:
     activities = []
 
-    # Batch-load products for inventory logs (fix N+1)
     product_lookup = {p.id: p for p in db.query(models.Product).all()}
 
     logs = db.query(models.InventoryLog).order_by(models.InventoryLog.change_date.desc()).limit(limit).all()

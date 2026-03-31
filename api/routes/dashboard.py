@@ -9,6 +9,17 @@ from services import dashboard_service
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
 
+@router.get("/bootstrap")
+def get_dashboard_bootstrap(db: Session = Depends(database.get_db)):
+    return {
+        "metrics": dashboard_service.get_dashboard_metrics(db),
+        "shipments": dashboard_service.get_dashboard_shipments(db),
+        "activities": dashboard_service.get_dashboard_activities(db),
+        "stats": dashboard_service.get_dashboard_stats(db),
+        "overview": dashboard_service.get_dashboard_overview(db),
+    }
+
+
 @router.get("/metrics")
 def get_metrics(db: Session = Depends(database.get_db)):
     return dashboard_service.get_dashboard_metrics(db)

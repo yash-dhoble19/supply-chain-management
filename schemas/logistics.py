@@ -1,11 +1,34 @@
-from pydantic import BaseModel
 from typing import List, Optional
 
+from pydantic import BaseModel, Field
 
-class RouteRequest(BaseModel):
-    start_address: str
-    end_address: str
-    waypoints: List[str] = []
+
+class RoutePlanRequest(BaseModel):
+    origin: str
+    destination: str
+    load_type: str = "STANDARD"
+    origin_lat: Optional[float] = None
+    origin_lng: Optional[float] = None
+    dest_lat: Optional[float] = None
+    dest_lng: Optional[float] = None
+
+
+class ShipmentCreate(BaseModel):
+    origin: str
+    destination: str
+    load_type: str = "STANDARD"
+    tracking_id: Optional[str] = None
+    tracking_number: Optional[str] = None
+    origin_lat: Optional[float] = None
+    origin_lng: Optional[float] = None
+    dest_lat: Optional[float] = None
+    dest_lng: Optional[float] = None
+    carrier_id: Optional[int] = None
+    driver_id: Optional[int] = None
+
+
+class ShipmentStartRequest(BaseModel):
+    tick_seconds: int = Field(default=5, ge=3, le=5)
 
 
 class CarrierCreate(BaseModel):
@@ -22,18 +45,23 @@ class DriverCreate(BaseModel):
     carrier_id: int
 
 
-class ShipmentCreate(BaseModel):
-    tracking_number: str
+class TrackingLogResponse(BaseModel):
+    latitude: float
+    longitude: float
+    timestamp: str
+
+
+class RoutePlanResponse(BaseModel):
     origin: str
     destination: str
-    carrier_id: Optional[int] = None
-    driver_id: Optional[int] = None
-    waypoints: List[str] = []
-    scheduled_date: Optional[str] = None  # ISO format string
-
-
-class ShipmentUpdate(BaseModel):
-    status: Optional[str] = None
-    current_location_lat: Optional[float] = None
-    current_location_lon: Optional[float] = None
-    progress_percent: Optional[float] = None
+    load_type: str
+    origin_lat: float
+    origin_lng: float
+    dest_lat: float
+    dest_lng: float
+    route_coordinates: List[List[float]]
+    distance_km: float
+    eta_hours: float
+    fuel_liters: float
+    average_speed_kmh: float
+    fuel_consumption_rate: float

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ActivityItem } from "../components/dashboard/ActivityItem";
 import { MetricCard } from "../components/dashboard/MetricCard";
 import { SectionCard } from "../components/dashboard/SectionCard";
@@ -95,6 +95,12 @@ export function Dashboard({ activePage, onNavigate }: DashboardProps) {
   const visibleShipmentItems = filteredShipments.slice(0, visibleShipments);
   const canLoadMoreShipments = visibleShipments < filteredShipments.length;
   const nextLoadCount = Math.min(4, filteredShipments.length - visibleShipments);
+
+  useEffect(() => {
+    const handler = () => refetch();
+    window.addEventListener("inventory-updated", handler);
+    return () => window.removeEventListener("inventory-updated", handler);
+  }, [refetch]);
 
   return (
     <div className="min-h-screen bg-background text-on-surface">

@@ -2,7 +2,7 @@
 # --------------------------------------------
 
 from pydantic_settings import BaseSettings
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 import json
 
 
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # App Settings
     app_name: str = "Demand Forecasting API"
     app_version: str = "1.0.0"
-    debug: bool = False
+    debug: Union[bool, str] = False
     api_host: str = "127.0.0.1"  # ← Make configurable
     api_port: int = 8000          # ← Make configurable
     

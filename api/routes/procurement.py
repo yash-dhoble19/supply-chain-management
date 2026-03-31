@@ -35,8 +35,9 @@ def get_summary(db: Session = Depends(database.get_db)):
     critical_items = 0
     critical_names = []
     for product in products:
+        po_items = getattr(product, "po_items", [])
         incoming_qty = sum(
-            item.quantity_ordered for item in product.po_items
+            item.quantity_ordered for item in po_items
             if item.purchase_order and item.purchase_order.status in ["DRAFT", "APPROVED", "IN_TRANSIT"]
         )
         if (product.current_stock + incoming_qty) < (product.optimal_stock_level * 0.2):
@@ -72,6 +73,20 @@ def get_summary(db: Session = Depends(database.get_db)):
         "savingsChange": f"+{savings_pct}% projected",
         "leadTimeAverage": f"{avg_supplier_lead}d",
         "leadTimeChange": f"-{lead_opportunity}d opportunity" if lead_opportunity else "Stable lead time",
+    }
+
+
+@router.get("/api/procurement/bootstrap")
+def get_procurement_bootstrap(db: Session = Depends(database.get_db)):
+    supplier_response = get_suppliers_overview(db)
+    return {
+        "summary": get_summary(db),
+        "insights": get_insights(None, db),
+        "supplierOverview": supplier_response["overview"],
+        "supplierRows": supplier_response["suppliers"],
+        "topPerformers": get_top_performers(db),
+        "spendOptimization": get_spend_optimization(db),
+        "purchaseOrders": list_purchase_orders(limit=4, page=1, db=db),
     }
 
 

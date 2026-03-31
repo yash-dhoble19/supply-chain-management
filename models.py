@@ -256,6 +256,7 @@ class Shipment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     tracking_number = Column(String, unique=True, index=True, nullable=False)
+    tracking_id = Column(String, unique=True, index=True, nullable=True)
     
     # Route Details
     origin = Column(String, nullable=False)
@@ -263,17 +264,31 @@ class Shipment(Base):
     waypoints = Column(Text, nullable=True) # JSON string of waypoints
     route_geometry = Column(Text, nullable=True) # Polyline string
     total_distance_km = Column(Float, default=0.0)
+    distance_km = Column(Float, default=0.0)
     
     # Origin coordinates (stored at creation, never updated)
     origin_lat = Column(Float, nullable=True)
     origin_lon = Column(Float, nullable=True)
+    origin_lng = Column(Float, nullable=True)
+    destination_lat = Column(Float, nullable=True)
+    destination_lng = Column(Float, nullable=True)
     origin_snapped = Column(Boolean, default=False)
     
     # Execution
-    status = Column(String, default="SCHEDULED") # SCHEDULED, IN_TRANSIT, DELIVERED, DELAYED
+    status = Column(String, default="CREATED") # CREATED, IN_TRANSIT, DELIVERED
     current_location_lat = Column(Float, nullable=True)
     current_location_lon = Column(Float, nullable=True)
+    current_lat = Column(Float, nullable=True)
+    current_lng = Column(Float, nullable=True)
     progress_percent = Column(Float, default=0.0)
+    progress = Column(Float, default=0.0)
+    started_at = Column(DateTime, nullable=True)
+    delivered_at = Column(DateTime, nullable=True)
+    load_type = Column(String, default="STANDARD")
+    average_speed_kmh = Column(Float, default=50.0)
+    fuel_consumption_rate = Column(Float, default=0.28)
+    fuel_required_liters = Column(Float, default=0.0)
+    route_duration_seconds = Column(Float, default=0.0)
     
     # Dates
     scheduled_date = Column(DateTime, nullable=True)
@@ -286,6 +301,24 @@ class Shipment(Base):
     
     carrier = relationship("Carrier", back_populates="shipments")
     driver = relationship("Driver", back_populates="shipments")
+    tracking_logs = relationship(
+        "TrackingLog",
+        back_populates="shipment",
+        cascade="all, delete-orphan",
+        order_by="TrackingLog.timestamp"
+    )
+
+
+class TrackingLog(Base):
+    __tablename__ = "tracking"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shipment_id = Column(Integer, ForeignKey("shipments.id"), nullable=False, index=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)
+
+    shipment = relationship("Shipment", back_populates="tracking_logs")
 
 # =====================================================
 # 10. AI INSIGHTS (Stored Intelligence)

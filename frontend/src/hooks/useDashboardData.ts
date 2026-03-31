@@ -24,38 +24,59 @@ const initialState: DashboardState = {
   lastUpdated: null,
 };
 
+const DASHBOARD_CACHE_TTL_MS = 30_000;
+
+let dashboardCache:
+  | {
+      data: Omit<DashboardState, "isLoading" | "error">;
+      cachedAt: number;
+    }
+  | null = null;
+
 export function useDashboardData() {
   const [state, setState] = useState<DashboardState>(initialState);
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
+    const cached = dashboardCache && Date.now() - dashboardCache.cachedAt < DASHBOARD_CACHE_TTL_MS ? dashboardCache : null;
+
+    if (cached) {
+      setState({
+        ...cached.data,
+        isLoading: false,
+        error: null,
+      });
+    }
 
     async function loadDashboard() {
       setState((current) => ({
         ...current,
-        isLoading: true,
+        isLoading: !cached,
         error: null,
       }));
 
       try {
-        const [metrics, shipments, activities, stats, overview] = await Promise.all([
-          dashboardService.getMetrics(controller.signal),
-          dashboardService.getShipments(controller.signal),
-          dashboardService.getActivities(controller.signal),
-          dashboardService.getStats(controller.signal),
-          dashboardService.getOverview(controller.signal),
-        ]);
+        const response = await dashboardService.getBootstrap(controller.signal);
+
+        const nextState = {
+          metrics: response.metrics,
+          shipments: response.shipments,
+          activities: response.activities,
+          stats: response.stats,
+          overview: response.overview,
+          lastUpdated: new Date(),
+        };
+
+        dashboardCache = {
+          data: nextState,
+          cachedAt: Date.now(),
+        };
 
         setState({
-          metrics,
-          shipments,
-          activities,
-          stats,
-          overview,
+          ...nextState,
           isLoading: false,
           error: null,
-          lastUpdated: new Date(),
         });
       } catch (error) {
         if (controller.signal.aborted) {

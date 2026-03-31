@@ -1,148 +1,188 @@
-"""
-Logistics routes — /logistics/*
-"""
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
-import models
+
 import database
-from schemas.logistics import RouteRequest, CarrierCreate, DriverCreate, ShipmentCreate, ShipmentUpdate
+import models
+from schemas.logistics import (
+    CarrierCreate,
+    DriverCreate,
+    RoutePlanRequest,
+    ShipmentCreate,
+    ShipmentStartRequest,
+)
 from services import logistics_service
-from services.background_tasks import generate_and_store_insight
-
-router = APIRouter(prefix="/logistics", tags=["Logistics"])
+from services.logistics_tracker import realtime_manager
 
 
-@router.post("/plan_route")
-def plan_route(request: RouteRequest, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db)):
-    start_lat, start_lon = logistics_service.get_coordinates(request.start_address)
-    end_lat, end_lon = logistics_service.get_coordinates(request.end_address)
+router = APIRouter(prefix="/api", tags=["Logistics"])
 
-    if not (start_lat and start_lon):
-        raise HTTPException(400, "Invalid Start Address")
-    if not (end_lat and end_lon):
-        raise HTTPException(400, "Invalid End Address")
 
-    waypoint_coords = []
-    waypoint_names = []
-    if request.waypoints:
-        for wp in request.waypoints:
-            if wp.strip():
-                lat, lon = logistics_service.get_coordinates(wp)
-                if lat and lon:
-                    waypoint_coords.append((lat, lon))
-                    waypoint_names.append(wp)
+@router.post("/routes/plan")
+def plan_route(request: RoutePlanRequest):
+    try:
+        route_plan = logistics_service.build_route_plan(
+            origin=request.origin,
+            destination=request.destination,
+            load_type=request.load_type,
+            origin_lat=request.origin_lat,
+            origin_lng=request.origin_lng,
+            dest_lat=request.dest_lat,
+            dest_lng=request.dest_lng,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Route planning failed: {error}") from error
 
-    route_data = logistics_service.get_route_data(
-        (start_lat, start_lon), (end_lat, end_lon), waypoint_coords
-    )
-    if not route_data:
-        raise HTTPException(500, "Could not calc route")
+    return logistics_service.serialize_route_plan(route_plan)
 
-    route_desc = f"from {request.start_address} to {request.end_address}"
-    if waypoint_names:
-        route_desc += f" via {', '.join(waypoint_names)}"
 
-    duration_hrs = float(route_data.get("duration_min", 0)) / 60.0
-    dist_km = float(route_data.get("distance_km", 0))
-    if duration_hrs > 8 or dist_km > 600:
-        risk_analysis = "HIGH_RISK: Long transit duration requiring layovers. Monitor tracking closely."
-    elif duration_hrs > 4 or dist_km > 300:
-        risk_analysis = "MEDIUM_RISK: Inter-city regional transit."
-    else:
-        risk_analysis = "LOW_RISK: Short distance transit."
+@router.post("/shipments/create")
+def create_shipment(request: ShipmentCreate, db: Session = Depends(database.get_db)):
+    try:
+        shipment = logistics_service.create_shipment(
+            db,
+            origin=request.origin,
+            destination=request.destination,
+            load_type=request.load_type,
+            tracking_id=request.tracking_id,
+            tracking_number=request.tracking_number,
+            origin_lat=request.origin_lat,
+            origin_lng=request.origin_lng,
+            dest_lat=request.dest_lat,
+            dest_lng=request.dest_lng,
+            carrier_id=request.carrier_id,
+            driver_id=request.driver_id,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Shipment creation failed: {error}") from error
 
-    # Background task to run full AI evaluation and cache to db
-    background_tasks.add_task(
-        generate_and_store_insight,
-        db=db,
-        entity_type="ROUTE",
-        entity_id=route_desc,
-        insight_type="ROUTE_RISK",
-        route_desc=route_desc,
-        distance_km=route_data.get("distance_km"),
-        duration_min=route_data.get("duration_min")
+    return logistics_service.serialize_shipment(shipment)
+
+
+@router.get("/shipments")
+def list_shipments(db: Session = Depends(database.get_db)):
+    shipments = db.query(models.Shipment).order_by(models.Shipment.created_at.desc()).all()
+    return [logistics_service.serialize_shipment(shipment) for shipment in shipments]
+
+
+@router.get("/shipments/{shipment_id}")
+def get_shipment(shipment_id: int, db: Session = Depends(database.get_db)):
+    shipment = db.query(models.Shipment).filter(models.Shipment.id == shipment_id).first()
+    if shipment is None:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    return logistics_service.serialize_shipment(shipment)
+
+
+@router.post("/shipments/{shipment_id}/start")
+def start_shipment(
+    shipment_id: int,
+    request: ShipmentStartRequest,
+    db: Session = Depends(database.get_db),
+):
+    shipment = db.query(models.Shipment).filter(models.Shipment.id == shipment_id).first()
+    if shipment is None:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+
+    try:
+        shipment = logistics_service.start_shipment(db, shipment)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    realtime_manager.ensure_tracking(shipment.id, request.tick_seconds)
+    return logistics_service.serialize_shipment(shipment)
+
+
+@router.get("/tracking/{shipment_id}")
+def get_tracking_logs(shipment_id: int, db: Session = Depends(database.get_db)):
+    shipment = db.query(models.Shipment).filter(models.Shipment.id == shipment_id).first()
+    if shipment is None:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+
+    tracking_logs = (
+        db.query(models.TrackingLog)
+        .filter(models.TrackingLog.shipment_id == shipment_id)
+        .order_by(models.TrackingLog.timestamp.asc())
+        .all()
     )
 
     return {
-        "start_coords": [start_lat, start_lon],
-        "end_coords": [end_lat, end_lon],
-        "waypoints": waypoint_coords,
-        "route_info": route_data,
-        "risk_analysis": risk_analysis,
+        "shipment": logistics_service.serialize_shipment(shipment),
+        "logs": [logistics_service.serialize_tracking_log(log) for log in tracking_logs],
     }
-
-
-# ── Carriers ─────────────────────────────────────────────────────────
 
 
 @router.post("/carriers/create")
 def create_carrier(carrier: CarrierCreate, db: Session = Depends(database.get_db)):
-    db_carrier = models.Carrier(**carrier.dict())
+    record = models.Carrier(**carrier.dict())
     try:
-        db.add(db_carrier)
+        db.add(record)
         db.commit()
-        db.refresh(db_carrier)
-        return db_carrier
-    except Exception as e:
+        db.refresh(record)
+    except Exception as error:
         db.rollback()
-        raise HTTPException(400, f"Error creating carrier: {e}")
+        raise HTTPException(status_code=400, detail=f"Carrier creation failed: {error}") from error
+    return record
 
 
-@router.get("/carriers/list")
+@router.get("/carriers")
 def list_carriers(db: Session = Depends(database.get_db)):
     return db.query(models.Carrier).all()
 
 
-# ── Drivers ──────────────────────────────────────────────────────────
-
-
 @router.post("/drivers/create")
 def create_driver(driver: DriverCreate, db: Session = Depends(database.get_db)):
-    db_driver = models.Driver(**driver.dict())
+    record = models.Driver(**driver.dict())
     try:
-        db.add(db_driver)
+        db.add(record)
         db.commit()
-        db.refresh(db_driver)
-        return db_driver
-    except Exception as e:
+        db.refresh(record)
+    except Exception as error:
         db.rollback()
-        raise HTTPException(400, f"Error creating driver: {e}")
+        raise HTTPException(status_code=400, detail=f"Driver creation failed: {error}") from error
+    return record
 
 
-@router.get("/drivers/list")
-def list_drivers(carrier_id: Optional[int] = None, db: Session = Depends(database.get_db)):
-    q = db.query(models.Driver)
-    if carrier_id:
-        q = q.filter(models.Driver.carrier_id == carrier_id)
-    return q.all()
+@router.get("/drivers")
+def list_drivers(db: Session = Depends(database.get_db)):
+    return db.query(models.Driver).all()
 
 
-# ── Shipments ────────────────────────────────────────────────────────
+@router.websocket("/ws/shipments/{shipment_id}")
+async def shipment_tracking_socket(websocket: WebSocket, shipment_id: int):
+    db = database.SessionLocal()
+    try:
+        shipment = db.query(models.Shipment).filter(models.Shipment.id == shipment_id).first()
+        if shipment is None:
+            await websocket.close(code=4404)
+            return
 
+        await realtime_manager.connect(shipment_id, websocket)
+        await websocket.send_json(
+            {
+                "type": "shipment.snapshot",
+                "shipment": logistics_service.serialize_shipment(shipment),
+                "tracking": [
+                    logistics_service.serialize_tracking_log(log)
+                    for log in (
+                        db.query(models.TrackingLog)
+                        .filter(models.TrackingLog.shipment_id == shipment_id)
+                        .order_by(models.TrackingLog.timestamp.asc())
+                        .all()
+                    )
+                ],
+            }
+        )
 
-@router.post("/shipments/create")
-def create_shipment(shipment: ShipmentCreate, db: Session = Depends(database.get_db)):
-    db_shipment, error = logistics_service.create_shipment(
-        db, shipment.tracking_number, shipment.origin, shipment.destination,
-        shipment.carrier_id, shipment.driver_id, shipment.waypoints, shipment.scheduled_date,
-    )
-    if error:
-        raise HTTPException(400, error)
-    return db_shipment
+        if shipment.status == "IN_TRANSIT":
+            realtime_manager.ensure_tracking(shipment_id)
 
-
-@router.get("/shipments/list")
-def list_shipments(db: Session = Depends(database.get_db)):
-    return db.query(models.Shipment).all()
-
-
-@router.post("/shipments/{id}/update")
-def update_shipment(id: int, update: ShipmentUpdate, db: Session = Depends(database.get_db)):
-    shipment = db.query(models.Shipment).filter(models.Shipment.id == id).first()
-    if not shipment:
-        raise HTTPException(404, "Shipment not found")
-    return logistics_service.update_shipment(
-        db, shipment, update.status,
-        update.current_location_lat, update.current_location_lon, update.progress_percent,
-    )
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        realtime_manager.disconnect(shipment_id, websocket)
+    finally:
+        db.close()

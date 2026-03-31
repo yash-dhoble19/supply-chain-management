@@ -1,21 +1,16 @@
 """
-ChainMind Supply Intelligence — Application Entry Point
-========================================================
-This is the slim app factory. All business logic lives in services/,
-all schemas live in schemas/, and all route handlers live in api/routes/.
+ChainMind Supply Intelligence - Application Entry Point
+======================================================
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-import models
 import database
+import models
+from api.routes import ai, dashboard, inventory, logistics, orders, procurement, products
 from config import settings
+from services.logistics_tracker import realtime_manager
 
-# ── Route Modules ────────────────────────────────────────────────────
-from api.routes import dashboard, products, procurement, orders, logistics, ai, forecast
-
-
-# ── App Factory ──────────────────────────────────────────────────────
 
 app = FastAPI(
     title=settings.app_name,
@@ -25,26 +20,26 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── Database Init ────────────────────────────────────────────────────
-models.Base.metadata.create_all(bind=database.engine)
-
-# ── Register Routers ─────────────────────────────────────────────────
 app.include_router(dashboard.router)
 app.include_router(products.router)
 app.include_router(procurement.router)
 app.include_router(orders.router)
 app.include_router(logistics.router)
 app.include_router(ai.router)
-app.include_router(forecast.router)
+app.include_router(inventory.router)
 
 
-# ── Health Checks ────────────────────────────────────────────────────
+@app.on_event("startup")
+async def startup_event():
+    database.initialize_database()
+    await realtime_manager.resume_in_transit_shipments()
+
 
 @app.get("/")
 async def root():
@@ -52,7 +47,7 @@ async def root():
         "status": "healthy",
         "app": settings.app_name,
         "version": settings.app_version,
-        "message": "Supply Chain AI System is Online 🚀",
+        "message": "Supply Chain AI System is Online",
         "features": [
             "Dynamic forecast horizon validation",
             "Multi-country support",

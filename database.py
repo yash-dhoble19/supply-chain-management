@@ -9,18 +9,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Use DATABASE_URL from environment with fallback to local PostgreSQL
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:yash123@localhost/supply_chain_db")
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+if not SQLALCHEMY_DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is required and must point to the Neon PostgreSQL database from .env")
 
-# Neon requires 'postgresql+psycopg2://' or similar if using specific drivers, 
-# but SQLAlchemy usually handles 'postgresql://' just fine.
 if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+
+def initialize_database():
+    import models
+    from services.logistics_schema import sync_logistics_schema
+
+    models.Base.metadata.create_all(bind=engine)
+    sync_logistics_schema(engine)
 
 # Dependency to get DB session in endpoints
 def get_db():
