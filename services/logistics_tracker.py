@@ -77,6 +77,9 @@ class LogisticsRealtimeManager:
             self._shipment_tasks.pop(shipment_id, None)
 
     async def _advance_shipment(self, shipment_id: int, tick_seconds: int) -> dict | None:
+        return await asyncio.to_thread(self._advance_shipment_sync, shipment_id, tick_seconds)
+
+    def _advance_shipment_sync(self, shipment_id: int, tick_seconds: int) -> dict | None:
         db = SessionLocal()
         try:
             shipment = db.query(models.Shipment).filter(models.Shipment.id == shipment_id).first()
@@ -166,13 +169,17 @@ class LogisticsRealtimeManager:
         tracking_logs = (
             db.query(models.TrackingLog)
             .filter(models.TrackingLog.shipment_id == shipment.id)
-            .order_by(models.TrackingLog.timestamp.asc())
+            .order_by(models.TrackingLog.timestamp.desc())
+            .limit(50)
             .all()
         )
         return {
             "type": event_type,
-            "shipment": logistics_service.serialize_shipment(shipment),
-            "tracking": [logistics_service.serialize_tracking_log(log) for log in tracking_logs[-50:]],
+            "shipment": logistics_service.serialize_shipment(
+                shipment,
+                include_route_coordinates=False,
+            ),
+            "tracking": [logistics_service.serialize_tracking_log(log) for log in reversed(tracking_logs)],
         }
 
 

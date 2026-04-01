@@ -20,6 +20,17 @@ function PurchaseOrderPageSkeleton() {
   return <div className="h-[156px] animate-pulse rounded-xl bg-surface-container-high" />;
 }
 
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
+
 export function PurchaseOrdersPage({ activePage, onNavigate }: PurchaseOrdersPageProps) {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -37,6 +48,7 @@ export function PurchaseOrdersPage({ activePage, onNavigate }: PurchaseOrdersPag
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 250);
   const purchaseOrder = usePurchaseOrder({
     onUpdated: () => setReloadToken((value) => value + 1),
   });
@@ -58,32 +70,47 @@ export function PurchaseOrdersPage({ activePage, onNavigate }: PurchaseOrdersPag
   useEffect(() => {
     const controller = new AbortController();
 
+    async function loadSupplierOptions() {
+      try {
+        const supplierOverview = await procurementService.getSuppliersOverview(controller.signal);
+        setSupplierOptions(supplierOverview.suppliers);
+      } catch (requestError) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setError(requestError instanceof Error ? requestError.message : "Unable to load supplier options.");
+      }
+    }
+
+    void loadSupplierOptions();
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
     async function loadPurchaseOrders() {
       setLoading(true);
       setError(null);
 
       try {
-        const [orders, supplierOverview] = await Promise.all([
-          procurementService.getPurchaseOrders(
-            {
-              page: currentPage,
-              limit: pageSize,
-              status: statusFilter !== "all" ? statusFilter : undefined,
-              priority: priorityFilter !== "all" ? priorityFilter : undefined,
-              supplier: supplierFilter !== "all" ? supplierFilter : undefined,
-              search: searchTerm || undefined,
-              dateRange: dateFilter !== "all" && dateFilter !== "custom" ? dateFilter : undefined,
-              startDate: dateFilter === "custom" && customStartDate ? customStartDate : undefined,
-              endDate: dateFilter === "custom" && customEndDate ? customEndDate : undefined,
-              sort: sortOrder,
-            },
-            controller.signal,
-          ),
-          procurementService.getSuppliersOverview(controller.signal),
-        ]);
+        const orders = await procurementService.getPurchaseOrders(
+          {
+            page: currentPage,
+            limit: pageSize,
+            status: statusFilter !== "all" ? statusFilter : undefined,
+            priority: priorityFilter !== "all" ? priorityFilter : undefined,
+            supplier: supplierFilter !== "all" ? supplierFilter : undefined,
+            search: debouncedSearchTerm || undefined,
+            dateRange: dateFilter !== "all" && dateFilter !== "custom" ? dateFilter : undefined,
+            startDate: dateFilter === "custom" && customStartDate ? customStartDate : undefined,
+            endDate: dateFilter === "custom" && customEndDate ? customEndDate : undefined,
+            sort: sortOrder,
+          },
+          controller.signal,
+        );
 
         setPurchaseOrders(orders);
-        setSupplierOptions(supplierOverview.suppliers);
         setLastUpdated(new Date());
       } catch (requestError) {
         if (controller.signal.aborted) {
@@ -104,8 +131,8 @@ export function PurchaseOrdersPage({ activePage, onNavigate }: PurchaseOrdersPag
     customEndDate,
     customStartDate,
     dateFilter,
+    debouncedSearchTerm,
     priorityFilter,
-    searchTerm,
     sortOrder,
     statusFilter,
     supplierFilter,

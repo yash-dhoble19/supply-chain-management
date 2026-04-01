@@ -5,7 +5,8 @@ Consolidates all procurement endpoints. Streamlit-only duplicates removed.
 from typing import Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
 import models
 import database
 from schemas.procurement import SupplierCreate, QuickPOCreate, POStatusUpdate, ProcurementRequest
@@ -15,52 +16,116 @@ from services.pdf_service import build_purchase_order_pdf
 router = APIRouter(tags=["Procurement"])
 
 
-# ── Summary & Insights ───────────────────────────────────────────────
+def _build_supplier_overview_response(analysis: list[dict]) -> dict:
+    avg_reliability = round(sum(item["reliability"] for item in analysis) / len(analysis), 1) if analysis else 0.0
+    on_time_delivery = round(sum(item["onTimeDelivery"] for item in analysis) / len(analysis), 1) if analysis else 0.0
+    quality_rate = round(sum(item["qualityRate"] for item in analysis) / len(analysis), 1) if analysis else 0.0
+    average_score = round(sum(item["score"] for item in analysis) / len(analysis), 1) if analysis else 0.0
+    esg = "A+" if average_score >= 95 else "A" if average_score >= 90 else "B+" if average_score >= 80 else "B"
+    return {
+        "overview": {
+            "avgReliability": avg_reliability,
+            "onTimeDelivery": on_time_delivery,
+            "qualityRate": quality_rate,
+            "esgCompliance": esg,
+        },
+        "suppliers": analysis,
+    }
 
 
-@router.get("/api/procurement/summary")
-def get_summary(db: Session = Depends(database.get_db)):
-    health_score = procurement_service.calculate_supply_chain_health_score(db)
-    from sqlalchemy.orm import joinedload
-    products = db.query(models.Product).options(
-        joinedload(models.Product.po_items).joinedload(models.POItem.purchase_order)
+def _build_top_performers_from_analysis(analysis: list[dict]) -> list[dict]:
+    performers = []
+    for idx, supplier in enumerate(sorted(analysis, key=lambda item: item["score"], reverse=True)[:3], start=1):
+        metric = (
+            f"{supplier['qualityRate']}% Quality"
+            if idx == 1
+            else f"{supplier['onTimeDelivery']}% On-time"
+            if idx == 2
+            else f"{supplier['reliability']}% Reliability"
+        )
+        performers.append(
+            {
+                "id": supplier["id"],
+                "rank": idx,
+                "name": supplier["name"],
+                "metricLabel": metric,
+                "score": supplier["score"],
+            }
+        )
+    return performers
+
+
+def _build_spend_optimization_response(db: Session, insights: list[dict]) -> dict:
+    product_lookup = {product.id: product for product in db.query(models.Product).all()}
+    baseline_spend = sum(
+        insight["replenishmentQty"] * (product_lookup.get(insight["productId"], models.Product()).unit_price or 0)
+        for insight in insights
+    )
+    optimized_spend = sum(insight["estimatedCost"] for insight in insights)
+    total_value = round(max(0, baseline_spend - optimized_spend), 2)
+    budget_pool = optimized_spend + max(total_value * 4, optimized_spend * 0.2, 1)
+    budget_utilization = round((optimized_spend / budget_pool) * 100, 1) if budget_pool else 0.0
+    return {
+        "totalValue": total_value,
+        "yoyChange": f"+{round((total_value / max(baseline_spend, 1)) * 100, 1)}% projected",
+        "budgetUtilization": budget_utilization,
+        "buttonLabel": "Download Report",
+    }
+
+
+def _build_procurement_summary(db: Session, insights: Optional[list[dict]] = None) -> dict:
+    products = db.query(
+        models.Product.id,
+        models.Product.name,
+        models.Product.current_stock,
+        models.Product.optimal_stock_level,
+        models.Product.unit_price,
     ).all()
-    suppliers = db.query(models.Supplier).all()
-
+    suppliers = db.query(models.Supplier.delivery_speed_days, models.Supplier.reliability_score).all()
     pending_pos = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.status == "DRAFT").count()
-    approved_pos = db.query(models.PurchaseOrder).filter(
-        models.PurchaseOrder.status.in_(["APPROVED", "IN_TRANSIT"])
-    ).count()
+    incoming_rows = (
+        db.query(
+            models.POItem.product_id,
+            func.coalesce(func.sum(models.POItem.quantity_ordered), 0).label("incoming_qty"),
+        )
+        .join(models.PurchaseOrder)
+        .filter(models.PurchaseOrder.status.in_(["DRAFT", "APPROVED", "IN_TRANSIT"]))
+        .group_by(models.POItem.product_id)
+        .all()
+    )
+    incoming_by_product = {row.product_id: int(row.incoming_qty or 0) for row in incoming_rows}
 
     critical_items = 0
-    critical_names = []
+    critical_names: list[str] = []
     for product in products:
-        po_items = getattr(product, "po_items", [])
-        incoming_qty = sum(
-            item.quantity_ordered for item in po_items
-            if item.purchase_order and item.purchase_order.status in ["DRAFT", "APPROVED", "IN_TRANSIT"]
-        )
+        incoming_qty = incoming_by_product.get(product.id, 0)
         if (product.current_stock + incoming_qty) < (product.optimal_stock_level * 0.2):
             critical_items += 1
             if len(critical_names) < 2:
                 critical_names.append(product.name)
 
-    insights = procurement_service.build_procurement_insights(db, limit=12)
-    product_lookup = {p.id: p for p in products}
+    avg_reliability = (
+        sum(supplier.reliability_score or 0 for supplier in suppliers) / len(suppliers) if suppliers else 90
+    )
+    health_score = max(0, min(100, 100 - min(critical_items * 5, 40) - min(pending_pos * 3, 20) + ((avg_reliability - 80) / 2)))
 
+    summary_insights = insights if insights is not None else procurement_service.build_procurement_insights(db, limit=12)
+    product_lookup = {product.id: product for product in products}
     savings_to_date = round(
         sum(
-            max(0, (product_lookup[i["productId"]].unit_price or 0) - i["unitPrice"]) * i["replenishmentQty"]
-            for i in insights
-            if i["productId"] in product_lookup and i["actionType"] == "quick_po"
-        ), 2,
+            max(0, (product_lookup[insight["productId"]].unit_price or 0) - insight["unitPrice"])
+            * insight["replenishmentQty"]
+            for insight in summary_insights
+            if insight["productId"] in product_lookup and insight["actionType"] == "quick_po"
+        ),
+        2,
     )
-
-    avg_supplier_lead = round(sum(s.delivery_speed_days or 0 for s in suppliers) / len(suppliers)) if suppliers else 0
-    fastest_lead = min((s.delivery_speed_days or 0 for s in suppliers), default=avg_supplier_lead)
-    lead_opportunity = max(avg_supplier_lead - fastest_lead, 0)
-    projected_spend = sum(i["estimatedCost"] for i in insights if i["actionType"] == "quick_po")
+    projected_spend = sum(insight["estimatedCost"] for insight in summary_insights if insight["actionType"] == "quick_po")
     savings_pct = round((savings_to_date / max(projected_spend, 1)) * 100, 1)
+
+    avg_supplier_lead = round(sum(supplier.delivery_speed_days or 0 for supplier in suppliers) / len(suppliers)) if suppliers else 0
+    fastest_lead = min((supplier.delivery_speed_days or 0 for supplier in suppliers), default=avg_supplier_lead)
+    lead_opportunity = max(avg_supplier_lead - fastest_lead, 0)
     status = "optimal" if health_score >= 80 else "warning" if health_score >= 60 else "critical"
 
     return {
@@ -76,16 +141,26 @@ def get_summary(db: Session = Depends(database.get_db)):
     }
 
 
+# ── Summary & Insights ───────────────────────────────────────────────
+
+
+@router.get("/api/procurement/summary")
+def get_summary(db: Session = Depends(database.get_db)):
+    return _build_procurement_summary(db)
+
+
 @router.get("/api/procurement/bootstrap")
 def get_procurement_bootstrap(db: Session = Depends(database.get_db)):
-    supplier_response = get_suppliers_overview(db)
+    insights = procurement_service.build_procurement_insights(db, limit=20)
+    supplier_analysis = procurement_service.build_supplier_analysis(db)
+    supplier_response = _build_supplier_overview_response(supplier_analysis)
     return {
-        "summary": get_summary(db),
-        "insights": get_insights(None, db),
+        "summary": _build_procurement_summary(db, insights=insights[:12]),
+        "insights": insights[:12],
         "supplierOverview": supplier_response["overview"],
         "supplierRows": supplier_response["suppliers"],
-        "topPerformers": get_top_performers(db),
-        "spendOptimization": get_spend_optimization(db),
+        "topPerformers": _build_top_performers_from_analysis(supplier_analysis),
+        "spendOptimization": _build_spend_optimization_response(db, insights),
         "purchaseOrders": list_purchase_orders(limit=4, page=1, db=db),
     }
 
@@ -117,48 +192,17 @@ def create_supplier(supplier: SupplierCreate, db: Session = Depends(database.get
 @router.get("/api/procurement/suppliers/overview")
 def get_suppliers_overview(db: Session = Depends(database.get_db)):
     analysis = procurement_service.build_supplier_analysis(db)
-    avg_reliability = round(sum(i["reliability"] for i in analysis) / len(analysis), 1) if analysis else 0.0
-    on_time_delivery = round(sum(i["onTimeDelivery"] for i in analysis) / len(analysis), 1) if analysis else 0.0
-    quality_rate = round(sum(i["qualityRate"] for i in analysis) / len(analysis), 1) if analysis else 0.0
-    average_score = round(sum(i["score"] for i in analysis) / len(analysis), 1) if analysis else 0.0
-
-    esg = "A+" if average_score >= 95 else "A" if average_score >= 90 else "B+" if average_score >= 80 else "B"
-    return {
-        "overview": {"avgReliability": avg_reliability, "onTimeDelivery": on_time_delivery,
-                     "qualityRate": quality_rate, "esgCompliance": esg},
-        "suppliers": analysis,
-    }
+    return _build_supplier_overview_response(analysis)
 
 
 @router.get("/api/procurement/suppliers/top-performers")
 def get_top_performers(db: Session = Depends(database.get_db)):
-    analysis = sorted(procurement_service.build_supplier_analysis(db), key=lambda x: x["score"], reverse=True)[:3]
-    performers = []
-    for idx, s in enumerate(analysis, start=1):
-        metric = (f"{s['qualityRate']}% Quality" if idx == 1
-                  else f"{s['onTimeDelivery']}% On-time" if idx == 2
-                  else f"{s['reliability']}% Reliability")
-        performers.append({"id": s["id"], "rank": idx, "name": s["name"], "metricLabel": metric, "score": s["score"]})
-    return performers
+    return _build_top_performers_from_analysis(procurement_service.build_supplier_analysis(db))
 
 
 @router.get("/api/procurement/spend-optimization")
 def get_spend_optimization(db: Session = Depends(database.get_db)):
-    insights = procurement_service.build_procurement_insights(db, limit=20)
-    product_lookup = {p.id: p for p in db.query(models.Product).all()}
-
-    baseline_spend = sum(i["replenishmentQty"] * (product_lookup.get(i["productId"], models.Product()).unit_price or 0) for i in insights)
-    optimized_spend = sum(i["estimatedCost"] for i in insights)
-    total_value = round(max(0, baseline_spend - optimized_spend), 2)
-    budget_pool = optimized_spend + max(total_value * 4, optimized_spend * 0.2, 1)
-    budget_utilization = round((optimized_spend / budget_pool) * 100, 1) if budget_pool else 0.0
-
-    return {
-        "totalValue": total_value,
-        "yoyChange": f"+{round((total_value / max(baseline_spend, 1)) * 100, 1)}% projected",
-        "budgetUtilization": budget_utilization,
-        "buttonLabel": "Download Report",
-    }
+    return _build_spend_optimization_response(db, procurement_service.build_procurement_insights(db, limit=20))
 
 
 @router.post("/procurement/suppliers/{supplier_id}/negotiation_email")
@@ -225,15 +269,13 @@ def list_purchase_orders(
         query = query.order_by(models.PurchaseOrder.created_at.desc())
 
     if limit:
-        query = query.limit(limit)
+        query = query.offset(max(page - 1, 0) * limit).limit(limit)
 
-    pos = query.all()
+    pos = query.options(joinedload(models.PurchaseOrder.supplier)).all()
     results = []
-    # Batch-load suppliers to avoid N+1
-    supplier_lookup = {s.id: s for s in db.query(models.Supplier).all()}
 
     for po in pos:
-        s = supplier_lookup.get(po.supplier_id)
+        s = po.supplier
         created_at = po.created_at or datetime.utcnow()
         results.append({
             "id": str(po.id), "poNumber": po.po_number,

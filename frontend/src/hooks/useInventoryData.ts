@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { inventoryService } from "../services/inventoryService";
 import type { InventorySummary, InventoryItem, InventoryActivityItem } from "../types/inventory.types";
 
@@ -101,10 +101,17 @@ export function useInventoryData() {
     };
   }, [reloadToken, state.page, state.limit]);
 
-  return {
-    ...state,
-    setPage: (page: number) => setState((prev) => ({ ...prev, page })),
-    setLimit: (limit: number) => setState((prev) => ({ ...prev, limit })),
-    refetch: () => setReloadToken((prev) => prev + 1),
-  };
+  const setPage = useCallback((page: number) => setState((prev) => ({ ...prev, page })), []);
+  const setLimit = useCallback((limit: number) => setState((prev) => ({ ...prev, limit })), []);
+  const refetch = useCallback(() => setReloadToken((prev) => prev + 1), []);
+
+  return useMemo(
+    () => ({
+      ...state,
+      setPage,
+      setLimit,
+      refetch,
+    }),
+    [refetch, setLimit, setPage, state],
+  );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { procurementService } from "../services/procurementService";
 import type {
   ProcurementInsight,
@@ -113,8 +113,13 @@ export function useProcurementData() {
     return () => controller.abort();
   }, [reloadToken]);
 
-  return {
-    ...state,
-    refetch: () => setReloadToken((current) => current + 1),
-  };
+  const refetch = useCallback(() => setReloadToken((current) => current + 1), []);
+
+  return useMemo(
+    () => ({
+      ...state,
+      refetch,
+    }),
+    [refetch, state],
+  );
 }

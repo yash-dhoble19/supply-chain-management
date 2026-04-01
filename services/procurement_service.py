@@ -125,17 +125,8 @@ def get_all_suppliers(db: Session):
 
 def build_supplier_analysis(db: Session) -> list[dict]:
     suppliers = get_all_suppliers(db)
-    # Batch-load all POs to avoid N+1
-    all_pos = db.query(models.PurchaseOrder).all()
-    pos_by_supplier = {}
-    for po in all_pos:
-        pos_by_supplier.setdefault(po.supplier_id, []).append(po)
-
     analysis = []
     for supplier in suppliers:
-        pos = pos_by_supplier.get(supplier.id, [])
-        total_pos = len(pos)
-        
         # On-time delivery should not be penalized by active drafts or in_transit POs.
         # Since we don't have a rigid historical PO table, we will proxy this realistically:
         # We start with their reliability score as a baseline, and slightly adjust based on their active PO volume.

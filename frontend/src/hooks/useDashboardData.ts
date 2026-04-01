@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { dashboardService } from "../services/dashboardService";
 import type { Activity, DashboardOverview, Metric, Shipment, Stats } from "../types/dashboard.types";
 
@@ -96,8 +96,13 @@ export function useDashboardData() {
     return () => controller.abort();
   }, [reloadToken]);
 
-  return {
-    ...state,
-    refetch: () => setReloadToken((current) => current + 1),
-  };
+  const refetch = useCallback(() => setReloadToken((current) => current + 1), []);
+
+  return useMemo(
+    () => ({
+      ...state,
+      refetch,
+    }),
+    [refetch, state],
+  );
 }

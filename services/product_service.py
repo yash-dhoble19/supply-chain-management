@@ -3,7 +3,7 @@ Product & Inventory service - single source of truth for stock logic.
 """
 from datetime import datetime
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 import models
@@ -158,27 +158,45 @@ def get_inventory_items(db: Session, page: int = 1, limit: int = 25, search: str
         )
 
     products = query.order_by(models.Product.name.asc()).offset((page - 1) * limit).limit(limit).all()
+    if not products:
+        return []
 
-    all_po_items = (
-        db.query(models.POItem)
+    product_ids = [product.id for product in products]
+    po_quantity_rows = (
+        db.query(
+            models.POItem.product_id.label("product_id"),
+            func.coalesce(func.sum(models.POItem.quantity_ordered), 0).label("pending_po_qty"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (models.PurchaseOrder.status == "IN_TRANSIT", models.POItem.quantity_ordered),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("in_transit_po_qty"),
+        )
         .join(models.PurchaseOrder)
-        .filter(models.PurchaseOrder.status.in_(["DRAFT", "APPROVED", "IN_TRANSIT"]))
+        .filter(
+            models.PurchaseOrder.status.in_(["DRAFT", "APPROVED", "IN_TRANSIT"]),
+            models.POItem.product_id.in_(product_ids),
+        )
+        .group_by(models.POItem.product_id)
         .all()
     )
-
-    po_items_by_product = {}
-    for item in all_po_items:
-        po_items_by_product.setdefault(item.product_id, []).append(item)
+    po_items_by_product = {
+        row.product_id: {
+            "pending_po_qty": int(row.pending_po_qty or 0),
+            "in_transit_po_qty": int(row.in_transit_po_qty or 0),
+        }
+        for row in po_quantity_rows
+    }
 
     items = []
     for product in products:
-        pending_po_qty = 0
-        in_transit_po_qty = 0
-        product_po_items = po_items_by_product.get(product.id, [])
-        for item in product_po_items:
-            pending_po_qty += item.quantity_ordered
-            if item.purchase_order and (item.purchase_order.status or "").upper() == "IN_TRANSIT":
-                in_transit_po_qty += item.quantity_ordered
+        po_quantities = po_items_by_product.get(product.id, {})
+        pending_po_qty = po_quantities.get("pending_po_qty", 0)
+        in_transit_po_qty = po_quantities.get("in_transit_po_qty", 0)
 
         stage = "WAREHOUSE"
         if in_transit_po_qty > 0:
@@ -214,27 +232,56 @@ def get_inventory_items(db: Session, page: int = 1, limit: int = 25, search: str
     return items
 
 
-def get_inventory_summary(db: Session):
-    products = db.query(models.Product).all()
+def get_inventory_total_count(db: Session, search: str | None = None) -> int:
+    query = db.query(func.count(models.Product.id))
+    if search:
+        search_value = f"%{search.lower()}%"
+        query = query.filter(
+            models.Product.name.ilike(search_value)
+            | models.Product.sku.ilike(search_value)
+            | models.Product.category.ilike(search_value)
+        )
+    return int(query.scalar() or 0)
 
-    total_on_hand = sum(p.current_stock or 0 for p in products)
-    total_on_hand_value = round(sum((p.current_stock or 0) * (p.unit_price or 0) for p in products), 2)
+
+def get_inventory_summary(db: Session):
+    on_hand_totals = db.query(
+        func.coalesce(func.sum(models.Product.current_stock), 0).label("total_on_hand"),
+        func.coalesce(func.sum(models.Product.current_stock * models.Product.unit_price), 0.0).label(
+            "total_on_hand_value"
+        ),
+        func.coalesce(
+            func.sum(
+                case(
+                    (models.Product.current_stock < models.Product.safety_stock_level, 1),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("critical_items"),
+    ).one()
 
     inbound_q = (
         db.query(models.POItem)
         .join(models.PurchaseOrder)
         .filter(models.PurchaseOrder.status.in_(["APPROVED", "IN_TRANSIT"]))
-        .all()
+        .with_entities(
+            func.coalesce(func.sum(models.POItem.quantity_ordered), 0).label("total_inbound"),
+            func.coalesce(
+                func.sum(models.POItem.quantity_ordered * models.POItem.unit_price),
+                0.0,
+            ).label("total_inbound_value"),
+        )
+        .one()
     )
-    total_inbound = sum(item.quantity_ordered or 0 for item in inbound_q)
-    total_inbound_value = round(
-        sum((item.quantity_ordered or 0) * (float(item.unit_price or 0)) for item in inbound_q),
-        2,
-    )
+    total_on_hand = int(on_hand_totals.total_on_hand or 0)
+    total_on_hand_value = round(float(on_hand_totals.total_on_hand_value or 0.0), 2)
+    total_inbound = int(inbound_q.total_inbound or 0)
+    total_inbound_value = round(float(inbound_q.total_inbound_value or 0.0), 2)
 
     total_items = total_on_hand + total_inbound
     total_value = round(total_on_hand_value + total_inbound_value, 2)
-    critical_items = sum(1 for p in products if (p.current_stock or 0) < (p.safety_stock_level or 0))
+    critical_items = int(on_hand_totals.critical_items or 0)
 
     return {
         "total_items": total_items,

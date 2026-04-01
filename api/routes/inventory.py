@@ -6,6 +6,7 @@ import models
 from schemas.inventory import InventoryAdjustment
 from services.product_service import (
     get_inventory_items,
+    get_inventory_total_count,
     get_inventory_summary,
     get_inventory_activity,
     adjust_inventory_stock,
@@ -23,11 +24,12 @@ def inventory_bootstrap(
     db: Session = Depends(database.get_db),
 ):
     items = get_inventory_items(db, page=page, limit=limit, search=search)
+    total = get_inventory_total_count(db, search=search)
     return {
         "inventory": {
             "page": page,
             "limit": limit,
-            "total": len(items),
+            "total": total,
             "items": items,
         },
         "summary": get_inventory_summary(db),
@@ -43,10 +45,11 @@ def list_inventory(
     db: Session = Depends(database.get_db),
 ):
     items = get_inventory_items(db, page=page, limit=limit, search=search)
+    total = get_inventory_total_count(db, search=search)
     return {
         "page": page,
         "limit": limit,
-        "total": len(items),
+        "total": total,
         "items": items,
     }
 

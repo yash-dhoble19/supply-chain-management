@@ -51,16 +51,7 @@ export const inventoryService = {
     safety_stock_level: number;
     optimal_stock_level: number;
     unit_price: number;
-  }) => {
-    console.log("inventoryService.createProduct called with:", payload);
-    return apiPost<{message:string;product:any}, typeof payload>("/api/products/", payload).then(res => {
-      console.log("inventoryService.createProduct response:", res);
-      return res;
-    }).catch(err => {
-      console.error("inventoryService.createProduct error:", err);
-      throw err;
-    });
-  },
+  }) => apiPost<{message:string;product:any}, typeof payload>("/api/products/", payload),
   updateProduct: (productId: number, payload: Partial<{
     sku: string;
     name: string;

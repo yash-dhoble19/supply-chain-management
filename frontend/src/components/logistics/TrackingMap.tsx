@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import L from "leaflet";
 import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
@@ -25,8 +25,14 @@ const liveMarker = new L.DivIcon({
 
 function FitMapBounds({ shipment, tracking }: { shipment: Shipment; tracking: TrackingLog[] }) {
   const map = useMap();
+  const lastViewportKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
+    const viewportKey = `${shipment.id}:${shipment.routeCoordinates.length}:${tracking.length ? "tracked" : "static"}`;
+    if (lastViewportKeyRef.current === viewportKey) {
+      return;
+    }
+
     const bounds: [number, number][] = [];
     shipment.routeCoordinates.forEach((coordinate) => bounds.push(coordinate));
     if (shipment.originLat !== null && shipment.originLng !== null) {
@@ -42,6 +48,7 @@ function FitMapBounds({ shipment, tracking }: { shipment: Shipment; tracking: Tr
     }
 
     map.fitBounds(bounds, { padding: [32, 32] });
+    lastViewportKeyRef.current = viewportKey;
   }, [map, shipment, tracking]);
 
   return null;

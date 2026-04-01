@@ -1,8 +1,7 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
-import { useInventoryData } from "../hooks/useInventoryData";
-import { useProcurementInventorySync } from "../hooks/useProcurementInventorySync";
+import { clearInventoryCache, useInventoryData } from "../hooks/useInventoryData";
 import type { AppPage } from "../types/app.types";
 import type { InventoryItem } from "../types/inventory.types";
 import { inventoryService } from "../services/inventoryService";
@@ -178,12 +177,6 @@ export function Inventory({ activePage, onNavigate }: InventoryProps) {
   const { items, summary, activity, isLoading, error, refetch, page, limit, total, setPage, setLimit } =
     useInventoryData();
 
-  // Auto-sync Procurement "Delivered" orders to Inventory
-  const { syncDeliveredPOs } = useProcurementInventorySync((message) => {
-    setFormStatus(message);
-    refetch();
-  });
-
   const [productForm, setProductForm] = useState({
     sku: "",
     name: "",
@@ -319,8 +312,6 @@ export function Inventory({ activePage, onNavigate }: InventoryProps) {
       stage: "WAREHOUSE",
     };
 
-    console.log("Inventory create request:", finalForm);
-
     try {
       const response = await inventoryService.createProduct(finalForm);
       const created = response.product;
@@ -329,7 +320,6 @@ export function Inventory({ activePage, onNavigate }: InventoryProps) {
         throw new Error("API did not return created product");
       }
 
-      console.log("Inventory create response:", created);
       setFormStatus("Product created successfully!");
       setProductForm({
         sku: "",
@@ -341,18 +331,16 @@ export function Inventory({ activePage, onNavigate }: InventoryProps) {
         unit_price: 0,
       });
       setShowAddForm(false);
-      import("../hooks/useInventoryData").then(m => m.clearInventoryCache());
+      clearInventoryCache();
       refetch();
       window.dispatchEvent(new Event("inventory-updated"));
     } catch (err) {
       setFormStatus(`Error: ${err instanceof Error ? err.message : "Failed to create product"}`);
-      console.error("Inventory create error:", err);
     }
   };
 
   const handleEditProduct = async () => {
     if (!selectedProduct) return;
-    console.log("handleEditProduct", selectedProduct.id, productForm);
 
     try {
       await inventoryService.updateProduct(selectedProduct.id, productForm);
@@ -361,11 +349,10 @@ export function Inventory({ activePage, onNavigate }: InventoryProps) {
       setSelectedProduct(null);
       setEditingRowId(null);
       setShowAddForm(false);
-      import("../hooks/useInventoryData").then(m => m.clearInventoryCache());
+      clearInventoryCache();
       refetch();
     } catch (err) {
       setFormStatus(`Error: ${err instanceof Error ? err.message : "Failed to update product"}`);
-      console.error("handleEditProduct error", err);
     }
   };
 
@@ -388,27 +375,21 @@ export function Inventory({ activePage, onNavigate }: InventoryProps) {
   const handleDeleteProduct = async (productId: number) => {
     if (!confirm("Are you sure you want to delete this product?")) return;
 
-    console.log("handleDeleteProduct", productId);
-
     try {
       const response = await inventoryService.deleteProduct(productId);
-      console.log("handleDeleteProduct response", response);
       if (!response || !response.product) {
         throw new Error("API did not return deleted product");
       }
-      console.log("Inventory delete response:", response.product);
 
-      import("../hooks/useInventoryData").then(m => m.clearInventoryCache());
+      clearInventoryCache();
       setFormStatus("Product deleted successfully!");
       refetch();
       window.dispatchEvent(new Event("inventory-updated"));
     } catch (err) {
       setFormStatus(`Error: ${err instanceof Error ? err.message : "Failed to delete product"}`);
-      console.error("Inventory delete error:", err);
     }
   };
   const startEditProduct = (item: InventoryItem) => {
-    console.log("startEditProduct", item);
     setSelectedProduct(item);
     setProductForm({
       sku: item.sku,

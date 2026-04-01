@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 import database
 import models
@@ -15,6 +15,50 @@ from services.logistics_tracker import realtime_manager
 
 
 router = APIRouter(prefix="/api", tags=["Logistics"])
+
+
+SHIPMENT_LIST_FIELDS = (
+    models.Shipment.id,
+    models.Shipment.tracking_number,
+    models.Shipment.tracking_id,
+    models.Shipment.origin,
+    models.Shipment.destination,
+    models.Shipment.origin_lat,
+    models.Shipment.origin_lon,
+    models.Shipment.origin_lng,
+    models.Shipment.destination_lat,
+    models.Shipment.destination_lng,
+    models.Shipment.current_location_lat,
+    models.Shipment.current_location_lon,
+    models.Shipment.current_lat,
+    models.Shipment.current_lng,
+    models.Shipment.status,
+    models.Shipment.progress_percent,
+    models.Shipment.progress,
+    models.Shipment.distance_km,
+    models.Shipment.eta,
+    models.Shipment.started_at,
+    models.Shipment.delivered_at,
+    models.Shipment.load_type,
+    models.Shipment.average_speed_kmh,
+    models.Shipment.fuel_consumption_rate,
+    models.Shipment.fuel_required_liters,
+    models.Shipment.route_duration_seconds,
+    models.Shipment.carrier_id,
+    models.Shipment.driver_id,
+    models.Shipment.created_at,
+)
+
+
+def _get_recent_tracking_logs(db: Session, shipment_id: int, limit: int = 50):
+    rows = (
+        db.query(models.TrackingLog)
+        .filter(models.TrackingLog.shipment_id == shipment_id)
+        .order_by(models.TrackingLog.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+    return list(reversed(rows))
 
 
 @router.post("/routes/plan")
@@ -65,8 +109,16 @@ def create_shipment(request: ShipmentCreate, db: Session = Depends(database.get_
 
 @router.get("/shipments")
 def list_shipments(db: Session = Depends(database.get_db)):
-    shipments = db.query(models.Shipment).order_by(models.Shipment.created_at.desc()).all()
-    return [logistics_service.serialize_shipment(shipment) for shipment in shipments]
+    shipments = (
+        db.query(models.Shipment)
+        .options(load_only(*SHIPMENT_LIST_FIELDS))
+        .order_by(models.Shipment.created_at.desc())
+        .all()
+    )
+    return [
+        logistics_service.serialize_shipment(shipment, include_route_coordinates=False)
+        for shipment in shipments
+    ]
 
 
 @router.get("/shipments/{shipment_id}")
@@ -97,17 +149,12 @@ def start_shipment(
 
 
 @router.get("/tracking/{shipment_id}")
-def get_tracking_logs(shipment_id: int, db: Session = Depends(database.get_db)):
+def get_tracking_logs(shipment_id: int, limit: int = 200, db: Session = Depends(database.get_db)):
     shipment = db.query(models.Shipment).filter(models.Shipment.id == shipment_id).first()
     if shipment is None:
         raise HTTPException(status_code=404, detail="Shipment not found")
 
-    tracking_logs = (
-        db.query(models.TrackingLog)
-        .filter(models.TrackingLog.shipment_id == shipment_id)
-        .order_by(models.TrackingLog.timestamp.asc())
-        .all()
-    )
+    tracking_logs = _get_recent_tracking_logs(db, shipment_id, max(1, min(limit, 500)))
 
     return {
         "shipment": logistics_service.serialize_shipment(shipment),
@@ -155,7 +202,12 @@ def list_drivers(db: Session = Depends(database.get_db)):
 async def shipment_tracking_socket(websocket: WebSocket, shipment_id: int):
     db = database.SessionLocal()
     try:
-        shipment = db.query(models.Shipment).filter(models.Shipment.id == shipment_id).first()
+        shipment = (
+            db.query(models.Shipment)
+            .options(load_only(*SHIPMENT_LIST_FIELDS))
+            .filter(models.Shipment.id == shipment_id)
+            .first()
+        )
         if shipment is None:
             await websocket.close(code=4404)
             return
@@ -164,15 +216,13 @@ async def shipment_tracking_socket(websocket: WebSocket, shipment_id: int):
         await websocket.send_json(
             {
                 "type": "shipment.snapshot",
-                "shipment": logistics_service.serialize_shipment(shipment),
+                "shipment": logistics_service.serialize_shipment(
+                    shipment,
+                    include_route_coordinates=False,
+                ),
                 "tracking": [
                     logistics_service.serialize_tracking_log(log)
-                    for log in (
-                        db.query(models.TrackingLog)
-                        .filter(models.TrackingLog.shipment_id == shipment_id)
-                        .order_by(models.TrackingLog.timestamp.asc())
-                        .all()
-                    )
+                    for log in _get_recent_tracking_logs(db, shipment_id, 50)
                 ],
             }
         )

@@ -39,7 +39,7 @@ export function usePurchaseOrder(options: UsePurchaseOrderOptions = {}) {
       const order = await purchaseOrderService.getById(created.id);
       setActiveOrder(order);
       setPreviewOpen(true);
-      await options.onCreated?.();
+      void Promise.resolve(options.onCreated?.());
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to create purchase order.");
     } finally {
@@ -102,7 +102,7 @@ export function usePurchaseOrder(options: UsePurchaseOrderOptions = {}) {
     try {
       const updatedOrder = await purchaseOrderService.updateStatus(orderId, { status: "APPROVED" });
       setActiveOrder(updatedOrder);
-      await options.onUpdated?.();
+      void Promise.resolve(options.onUpdated?.());
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to update purchase order.");
     } finally {

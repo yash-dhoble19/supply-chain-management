@@ -471,8 +471,8 @@ def serialize_tracking_log(tracking_log: models.TrackingLog) -> dict:
     }
 
 
-def serialize_shipment(shipment: models.Shipment) -> dict:
-    route_coordinates = parse_route_geometry(shipment.route_geometry)
+def serialize_shipment(shipment: models.Shipment, include_route_coordinates: bool = True) -> dict:
+    route_coordinates = parse_route_geometry(shipment.route_geometry) if include_route_coordinates else []
     eta = shipment.eta.isoformat() if shipment.eta else None
     started_at = shipment.started_at.isoformat() if shipment.started_at else None
     delivered_at = shipment.delivered_at.isoformat() if shipment.delivered_at else None

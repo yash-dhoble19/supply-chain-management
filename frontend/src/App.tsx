@@ -1,10 +1,31 @@
-import { useEffect, useState } from "react";
-import { Dashboard } from "./pages/Dashboard";
-import { Inventory } from "./pages/Inventory";
-import { Logistics } from "./pages/Logistics";
-import { ProcurementIntelligence } from "./pages/ProcurementIntelligence";
-import { PurchaseOrdersPage } from "./pages/PurchaseOrdersPage";
+import { Suspense, lazy, useEffect, useState } from "react";
 import type { AppPage } from "./types/app.types";
+
+const Dashboard = lazy(() =>
+  import("./pages/Dashboard").then((module) => ({
+    default: module.Dashboard,
+  })),
+);
+const Inventory = lazy(() =>
+  import("./pages/Inventory").then((module) => ({
+    default: module.Inventory,
+  })),
+);
+const Logistics = lazy(() =>
+  import("./pages/Logistics").then((module) => ({
+    default: module.Logistics,
+  })),
+);
+const ProcurementIntelligence = lazy(() =>
+  import("./pages/ProcurementIntelligence").then((module) => ({
+    default: module.ProcurementIntelligence,
+  })),
+);
+const PurchaseOrdersPage = lazy(() =>
+  import("./pages/PurchaseOrdersPage").then((module) => ({
+    default: module.PurchaseOrdersPage,
+  })),
+);
 
 const pathByPage: Record<AppPage, string> = {
   dashboard: "/dashboard",
@@ -31,6 +52,21 @@ function getPageFromPath(pathname: string): AppPage {
   }
 }
 
+function AppShellFallback() {
+  return (
+    <div className="min-h-screen bg-background px-4 py-8 text-on-surface sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl space-y-6">
+        <div className="h-10 w-64 animate-pulse rounded-xl bg-surface-container-high" />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="h-64 animate-pulse rounded-3xl bg-surface-container-high" />
+          <div className="h-64 animate-pulse rounded-3xl bg-surface-container-high" />
+        </div>
+        <div className="h-80 animate-pulse rounded-3xl bg-surface-container-high" />
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [activePage, setActivePage] = useState<AppPage>(() => getPageFromPath(window.location.pathname));
 
@@ -48,23 +84,19 @@ function App() {
     setActivePage(page);
   };
 
-  if (activePage === "dashboard") {
-    return <Dashboard activePage={activePage} onNavigate={navigate} />;
-  }
-
-  if (activePage === "inventory") {
-    return <Inventory activePage={activePage} onNavigate={navigate} />;
-  }
-
-  if (activePage === "logistics") {
-    return <Logistics activePage={activePage} onNavigate={navigate} />;
-  }
-
-  if (activePage === "purchaseOrders") {
-    return <PurchaseOrdersPage activePage={activePage} onNavigate={navigate} />;
-  }
-
-  return <ProcurementIntelligence activePage={activePage} onNavigate={navigate} />;
+  return (
+    <Suspense fallback={<AppShellFallback />}>
+      {activePage === "dashboard" ? <Dashboard activePage={activePage} onNavigate={navigate} /> : null}
+      {activePage === "inventory" ? <Inventory activePage={activePage} onNavigate={navigate} /> : null}
+      {activePage === "logistics" ? <Logistics activePage={activePage} onNavigate={navigate} /> : null}
+      {activePage === "purchaseOrders" ? (
+        <PurchaseOrdersPage activePage={activePage} onNavigate={navigate} />
+      ) : null}
+      {activePage === "procurement" ? (
+        <ProcurementIntelligence activePage={activePage} onNavigate={navigate} />
+      ) : null}
+    </Suspense>
+  );
 }
 
 export default App;

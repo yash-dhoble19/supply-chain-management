@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
 import { RouteForm } from "../components/logistics/RouteForm";
@@ -50,6 +50,17 @@ function matchesShipmentSearch(shipment: Shipment, query: string) {
   ].some((value) => value.toLowerCase().includes(normalized));
 }
 
+function mergeShipmentPreservingRoute(previous: Shipment | undefined, incoming: Shipment) {
+  if (incoming.routeCoordinates.length || !previous?.routeCoordinates.length) {
+    return incoming;
+  }
+
+  return {
+    ...incoming,
+    routeCoordinates: previous.routeCoordinates,
+  };
+}
+
 export function Logistics({ activePage, onNavigate }: LogisticsProps) {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -69,16 +80,25 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
   const [isSocketLive, setIsSocketLive] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const routeOutputRef = useRef<HTMLDivElement | null>(null);
+  const selectedShipmentIdRef = useRef<number | null>(null);
 
   const selectedShipment = shipments.find((shipment) => shipment.id === selectedShipmentId) ?? null;
 
-  const fetchShipments = async (signal?: AbortSignal) => {
+  useEffect(() => {
+    selectedShipmentIdRef.current = selectedShipmentId;
+  }, [selectedShipmentId]);
+
+  const fetchShipments = useCallback(async (signal?: AbortSignal) => {
     try {
       const response = await logisticsService.listShipments(signal);
-      setShipments(response);
+      setShipments((current) => {
+        const currentById = new Map(current.map((shipment) => [shipment.id, shipment]));
+        return response.map((shipment) => mergeShipmentPreservingRoute(currentById.get(shipment.id), shipment));
+      });
       setLastUpdated(new Date());
       setPageError(null);
-      if (selectedShipmentId !== null && !response.some((shipment) => shipment.id === selectedShipmentId)) {
+      const activeShipmentId = selectedShipmentIdRef.current;
+      if (activeShipmentId !== null && !response.some((shipment) => shipment.id === activeShipmentId)) {
         setSelectedShipmentId(null);
         setTrackingLogs([]);
       }
@@ -89,7 +109,7 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
     } finally {
       setIsLoadingShipments(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -103,7 +123,7 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
       controller.abort();
       window.clearInterval(interval);
     };
-  }, [selectedShipmentId]);
+  }, [fetchShipments]);
 
   useEffect(() => {
     if (!selectedShipmentId) {
@@ -120,7 +140,11 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
       .then((response) => {
         setTrackingLogs(response.logs);
         setShipments((current) =>
-          current.map((shipment) => (shipment.id === response.shipment.id ? response.shipment : shipment)),
+          current.map((shipment) =>
+            shipment.id === response.shipment.id
+              ? mergeShipmentPreservingRoute(shipment, response.shipment)
+              : shipment,
+          ),
         );
       })
       .catch((error) => {
@@ -150,7 +174,11 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
       try {
         const message = JSON.parse(event.data) as LogisticsSocketMessage;
         setShipments((current) =>
-          current.map((shipment) => (shipment.id === message.shipment.id ? message.shipment : shipment)),
+          current.map((shipment) =>
+            shipment.id === message.shipment.id
+              ? mergeShipmentPreservingRoute(shipment, message.shipment)
+              : shipment,
+          ),
         );
         setTrackingLogs(message.tracking);
         setLastUpdated(new Date());
