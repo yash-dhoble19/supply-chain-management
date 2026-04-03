@@ -10,6 +10,8 @@ interface HeaderProps {
   searchPlaceholder?: string;
   showRefresh?: boolean;
   showHelp?: boolean;
+  subtitle?: string;
+  showSearch?: boolean;
 }
 
 export function Header({
@@ -22,6 +24,8 @@ export function Header({
   searchPlaceholder = "Search intel...",
   showRefresh = true,
   showHelp = false,
+  subtitle,
+  showSearch = true,
 }: HeaderProps) {
   return (
     <header className="sticky top-0 z-30 flex h-auto flex-col gap-4 bg-background px-4 py-4 sm:px-6 lg:h-20 lg:flex-row lg:items-center lg:justify-between lg:px-8">
@@ -34,8 +38,11 @@ export function Header({
         >
           <span className="material-symbols-outlined">menu</span>
         </button>
-        <div>
+        <div className="flex flex-col gap-1">
           <h2 className="text-[1.5rem] font-bold tracking-tight text-slate-900">{title}</h2>
+          {subtitle ? (
+            <p className="text-sm text-on-surface-variant">{subtitle}</p>
+          ) : null}
           <p className="text-sm font-medium text-on-surface-variant lg:hidden">
             Last updated: {formatLastUpdated(lastUpdated)}
           </p>
@@ -78,18 +85,21 @@ export function Header({
             </button>
           ) : null}
 
-          <div className="hidden h-8 w-px bg-outline-variant/30 sm:block" />
-
-          <label className="flex items-center gap-2 rounded-full bg-surface-container-lowest px-3 py-2 shadow-sm">
-            <span className="material-symbols-outlined text-lg text-primary">search</span>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder={searchPlaceholder}
-              className="w-28 bg-transparent text-sm outline-none placeholder:text-on-surface-variant sm:w-44"
-            />
-          </label>
+          {showSearch ? (
+            <>
+              <div className="hidden h-8 w-px bg-outline-variant/30 sm:block" />
+              <label className="flex items-center gap-2 rounded-full bg-surface-container-lowest px-3 py-2 shadow-sm">
+                <span className="material-symbols-outlined text-lg text-primary">search</span>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(event) => onSearchChange(event.target.value)}
+                  placeholder={searchPlaceholder}
+                  className="w-28 bg-transparent text-sm outline-none placeholder:text-on-surface-variant sm:w-44"
+                />
+              </label>
+            </>
+          ) : null}
         </div>
       </div>
     </header>

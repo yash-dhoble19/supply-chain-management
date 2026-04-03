@@ -1,1 +1,7 @@
-export type AppPage = "dashboard" | "inventory" | "logistics" | "procurement" | "purchaseOrders";
+export type AppPage =
+  | "dashboard"
+  | "inventory"
+  | "logistics"
+  | "procurement"
+  | "purchaseOrders"
+  | "demandForecasting";
