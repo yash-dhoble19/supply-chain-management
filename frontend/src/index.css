@@ -404,6 +404,8 @@ body {
   gap: 36px;
   margin-bottom: 24px;
   box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+  border-top: 4px solid #3b82f6;
+  background: linear-gradient(180deg, #f8fbff, #ffffff);
   min-height: 240px;
   margin-left: auto;
   margin-right: auto;
@@ -495,10 +497,10 @@ body {
   border: 1px solid #e2e8f0;
   border-top: 2px solid transparent;
   border-radius: 14px;
-  padding: 20px;
+  padding: 30px 32px;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.03);
   transition: all 0.2s;
-  height: 100%;
+  min-height: 320px;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
@@ -522,27 +524,33 @@ body {
 }
 
 .demand-feature-icon {
-  width: 36px;
-  height: 36px;
+  width: 70px;
+  height: 70px;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 12px;
+  padding: 6px;
+}
+
+.demand-feature-icon svg {
+  width: 48px;
+  height: 48px;
 }
 
 .demand-feature-label {
   font-family: sans-serif;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #1e2d3d;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 
 .demand-feature-desc {
-  font-size: 12px;
+  font-size: 16px;
   color: #64748b;
   line-height: 1.5;
 }
