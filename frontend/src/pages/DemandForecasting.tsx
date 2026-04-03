@@ -166,7 +166,9 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
 
         <div className="demand-content">
           <div className="demand-hero">
-            <div className="demand-hero-icon">{icons.barChart}</div>
+            <div className="demand-hero-icon">
+              <span className="demand-hero-icon-inner">{icons.barChart}</span>
+            </div>
             <div>
               <h2>Start your first forecast</h2>
               <p>Turn data into demand insights with intelligent forecasting and real-time decision support.</p>

@@ -412,8 +412,8 @@ body {
 }
 
 .demand-hero-icon {
-  width: 64px;
-  height: 64px;
+  width: 140px;
+  height: 140px;
   background: linear-gradient(135deg, #eff6ff, #dbeafe);
   border-radius: 16px;
   display: flex;
@@ -421,6 +421,11 @@ body {
   justify-content: center;
   flex-shrink: 0;
   border: 1px solid #bfdbfe;
+}
+
+.demand-hero-icon-inner svg {
+  width: 120px;
+  height: 120px;
 }
 
 .demand-hero h2 {
@@ -504,6 +509,7 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
+  gap: 12px;
 }
 
 @media (max-width: 1023px) {
@@ -530,7 +536,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 12px;
+  margin-bottom: 24px;
   padding: 6px;
 }
 
@@ -546,7 +552,7 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #1e2d3d;
-  margin-bottom: 2px;
+  margin-bottom: 16px;
 }
 
 .demand-feature-desc {
