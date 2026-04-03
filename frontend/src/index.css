@@ -281,7 +281,7 @@ body {
   display: flex;
   min-height: 100vh;
   font-family: "DM Sans", "Segoe UI", sans-serif;
-  background: #f0f4f8;
+  background: #ffffff;
   overflow: hidden;
 }
 
@@ -290,6 +290,12 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.demand-main header {
+  background: #ffffff !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
 }
 
 @media (min-width: 1024px) {
@@ -303,7 +309,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: transparent;
+  background: #ffffff;
   border-bottom: none;
 }
 
