@@ -766,7 +766,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
         />
         <div className="demand-content">
           <div className="forecast-workspace">
-            <section className="forecast-section">
+            <section className="forecast-section upload-section">
               <div className="forecast-section-header">
                 <div>
                   <h3>Upload &amp; Inspect</h3>
