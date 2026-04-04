@@ -763,12 +763,6 @@ body {
   background: #3b82f6;
 }
 
-.forecast-section.data-summary-card::before,
-.forecast-section.mapping-success-banner::before {
-  left: 12px;
-  right: 12px;
-}
-
 .forecast-section.mapping-section::before {
   background: #10b981;
 }
@@ -1015,6 +1009,16 @@ body {
   color: #0f172a;
 }
 
+.summary-extra {
+  margin-top: 12px;
+  display: flex;
+  gap: 18px;
+  font-size: 0.9rem;
+  color: #0f172a;
+  font-weight: 600;
+  flex-wrap: wrap;
+}
+
 .confirm-mapping {
   min-width: 0;
   align-self: flex-start;
@@ -1166,9 +1170,92 @@ body {
   color: #047857;
 }
 
-.mapping-success-banner {
-  border-color: #a7f3d0;
-  background: #ecfdf5;
+.mapping-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.mapping-skip {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+  padding: 11px 24px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.mapping-skip:hover {
+  border-color: #9ca3af;
+  background: #f8fafc;
+}
+
+.dual-demand-intelligence {
+  border-top: 4px solid #10b981;
+  border-radius: 16px;
+  padding: 20px;
+  margin-top: 20px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.forecast-section.dual-demand-intelligence::before {
+  display: none;
+}
+
+.dual-demand-header {
+  margin-bottom: 16px;
+}
+
+.dual-demand-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.dual-demand-header p {
+  margin: 4px 0 0;
+  color: #475569;
+}
+
+.dual-demand-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.demand-box {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 18px;
+  background: #f8fafc;
+  min-height: 120px;
+}
+
+.demand-box-product {
+  background: #eefdf7;
+}
+
+.demand-box-store {
+  background: #eef2ff;
+}
+
+.demand-box h4 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.demand-box p {
+  margin: 8px 0 0;
+  color: #475569;
+  line-height: 1.4;
 }
 
 .mapping-success-banner-content {
@@ -1190,6 +1277,39 @@ body {
   background: #d1fae5;
   color: #047857;
   font-weight: 700;
+}
+
+.mapping-success-popup {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.35);
+  z-index: 50;
+}
+
+.mapping-success-popup-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px 32px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+  max-width: 320px;
+  text-align: center;
+}
+
+.mapping-success-popup-card button {
+  border: none;
+  background: #10b981;
+  color: #fff;
+  padding: 10px 24px;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .preview-header-row {
