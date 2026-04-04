@@ -911,6 +911,14 @@ body {
   cursor: not-allowed;
 }
 
+.confirm-mapping {
+  min-width: 0;
+  align-self: flex-start;
+  margin-top: 16px;
+  padding: 12px 32px;
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.35);
+}
+
 .preview-meta {
   display: flex;
   gap: 12px;

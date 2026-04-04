@@ -5,6 +5,22 @@ import { Sidebar } from "../components/layout/Sidebar";
 import type { AppPage } from "../types/app.types";
 import * as XLSX from "xlsx";
 
+type CsvRow = Record<string, string>;
+
+interface ParsedCsvPreview {
+  headers: string[];
+  previewRows: CsvRow[];
+  rawRows: CsvRow[];
+}
+
+interface DataMapping {
+  dateColumn: string;
+  salesColumn: string;
+  productColumn: string;
+  storeColumn: string;
+  priceColumn: string;
+}
+
 interface CreateForecastProps {
   activePage: AppPage;
   onNavigate: (page: AppPage) => void;
@@ -42,7 +58,7 @@ const splitCsvLine = (line: string) => {
   return cells;
 };
 
-const parseCsvPreview = (text: string, rowLimit = 5) => {
+const parseCsvPreview = (text: string, rowLimit = 5): ParsedCsvPreview | null => {
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -57,15 +73,74 @@ const parseCsvPreview = (text: string, rowLimit = 5) => {
     value ? value : `Column ${index + 1}`
   );
 
-  const rows = parsed.slice(1, 1 + rowLimit).map((cells) => {
-    const row: Record<string, string> = {};
+  const rawRows = parsed.slice(1).map((cells) => {
+    const row: CsvRow = {};
     headers.forEach((header, index) => {
       row[header] = cells[index] ?? "";
     });
     return row;
   });
 
-  return { headers, rows };
+  const previewRows = rawRows.slice(0, rowLimit);
+
+  return { headers, previewRows, rawRows };
+};
+
+const cleanForecastData = (
+  rows: CsvRow[],
+  columns: string[],
+  mapping: DataMapping
+): CsvRow[] => {
+  const seen = new Set<string>();
+  const cleaned: CsvRow[] = [];
+
+  rows.forEach((row) => {
+    const normalized: CsvRow = {};
+    columns.forEach((column) => {
+      normalized[column] = (row[column] ?? "").trim();
+    });
+
+    const hasAnyValue = Object.values(normalized).some((value) => value !== "");
+    if (!hasAnyValue) {
+      return;
+    }
+
+    const essentialMissing =
+      (mapping.dateColumn && !normalized[mapping.dateColumn]) ||
+      (mapping.salesColumn && !normalized[mapping.salesColumn]);
+    if (essentialMissing) {
+      return;
+    }
+
+    if (mapping.dateColumn && normalized[mapping.dateColumn]) {
+      const parsedDate = new Date(normalized[mapping.dateColumn]);
+      if (!Number.isNaN(parsedDate.getTime())) {
+        normalized[mapping.dateColumn] = parsedDate.toISOString().split("T")[0];
+      }
+    }
+
+    if (mapping.productColumn && !normalized[mapping.productColumn]) {
+      normalized[mapping.productColumn] = "Unknown Product";
+    }
+
+    if (mapping.storeColumn && !normalized[mapping.storeColumn]) {
+      normalized[mapping.storeColumn] = "Unknown Store";
+    }
+
+    if (mapping.priceColumn && !normalized[mapping.priceColumn]) {
+      normalized[mapping.priceColumn] = "0";
+    }
+
+    const rowKey = columns.map((column) => normalized[column]).join("|");
+    if (seen.has(rowKey)) {
+      return;
+    }
+
+    seen.add(rowKey);
+    cleaned.push(normalized);
+  });
+
+  return cleaned;
 };
 
 const pickColumn = (headers: string[], keywords: string[]) => {
@@ -78,7 +153,7 @@ const pickColumn = (headers: string[], keywords: string[]) => {
     }
   }
 
-  return headers[0] ?? "";
+  return "";
 };
 
 const formatFileSize = (size: number) => {
@@ -101,19 +176,51 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [columns, setColumns] = useState<string[]>([]);
   const [previewRows, setPreviewRows] = useState<Record<string, string>[]>([]);
+  const [rawRows, setRawRows] = useState<CsvRow[]>([]);
+  const [cleanedRows, setCleanedRows] = useState<CsvRow[]>([]);
   const [dateColumn, setDateColumn] = useState("");
-  const [categoryColumn, setCategoryColumn] = useState("");
-  const [unitsColumn, setUnitsColumn] = useState("");
+  const [salesColumn, setSalesColumn] = useState("");
+  const [productColumn, setProductColumn] = useState("");
+  const [storeColumn, setStoreColumn] = useState("");
+  const [priceColumn, setPriceColumn] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [fileSizeLabel, setFileSizeLabel] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const buildCurrentMapping = (): DataMapping => ({
+    dateColumn,
+    salesColumn,
+    productColumn,
+    storeColumn,
+    priceColumn,
+  });
+
+  const rebuildCleanedRows = () => {
+    if (!columns.length || !rawRows.length) {
+      return;
+    }
+
+    setCleanedRows(cleanForecastData(rawRows, columns, buildCurrentMapping()));
+  };
+
+  const handleConfirmMapping = () => {
+    rebuildCleanedRows();
+    setStatusMessage("Column mapping confirmed. Cleaned data is ready for forecasting.");
+  };
 
   const clearUploadedFile = () => {
     setUploadedFileName(null);
     setFileSizeLabel(null);
     setColumns([]);
     setPreviewRows([]);
+    setRawRows([]);
+    setCleanedRows([]);
     setStatusMessage(null);
+    setDateColumn("");
+    setSalesColumn("");
+    setProductColumn("");
+    setStoreColumn("");
+    setPriceColumn("");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -141,14 +248,68 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
         return;
       }
 
+      const detectedDateColumn = pickColumn(parsed.headers, [
+        "date",
+        "month",
+        "day",
+        "time",
+        "period",
+      ]);
+      const detectedSalesColumn = pickColumn(parsed.headers, [
+        "sales",
+        "units",
+        "quantity",
+        "qty",
+        "volume",
+        "demand",
+        "revenue",
+        "amount",
+      ]);
+      const detectedProductColumn = pickColumn(parsed.headers, [
+        "product",
+        "item",
+        "sku",
+        "category",
+        "name",
+      ]);
+      const detectedStoreColumn = pickColumn(parsed.headers, [
+        "store",
+        "location",
+        "branch",
+        "outlet",
+      ]);
+      const detectedPriceColumn = pickColumn(parsed.headers, [
+        "price",
+        "cost",
+        "unit price",
+        "rate",
+        "value",
+      ]);
+
+      const detectedMapping: DataMapping = {
+        dateColumn: detectedDateColumn,
+        salesColumn: detectedSalesColumn,
+        productColumn: detectedProductColumn,
+        storeColumn: detectedStoreColumn,
+        priceColumn: detectedPriceColumn,
+      };
+
+      const cleaned = cleanForecastData(parsed.rawRows, parsed.headers, detectedMapping);
+
       setColumns(parsed.headers);
-      setPreviewRows(parsed.rows);
-      setDateColumn(pickColumn(parsed.headers, ["date", "month", "day", "time", "period"]));
-      setCategoryColumn(pickColumn(parsed.headers, ["category", "product", "item", "segment", "name"]));
-      setUnitsColumn(pickColumn(parsed.headers, ["units", "quantity", "qty", "sales", "volume", "demand"]));
+      setPreviewRows(parsed.previewRows);
+      setRawRows(parsed.rawRows);
+      setCleanedRows(cleaned);
+      setDateColumn(detectedDateColumn);
+      setSalesColumn(detectedSalesColumn);
+      setProductColumn(detectedProductColumn);
+      setStoreColumn(detectedStoreColumn);
+      setPriceColumn(detectedPriceColumn);
       setUploadedFileName(file.name);
       setFileSizeLabel(formatFileSize(file.size));
-      setStatusMessage("Parsed file successfully. Please confirm column mapping before previewing.");
+      setStatusMessage(
+        "Parsed and cleaned the uploaded data. Please confirm column mapping below."
+      );
     };
 
     const reader = new FileReader();
@@ -227,7 +388,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
               <p className="demand-steps-title">Workflow overview:</p>
               <ol className="demand-steps">
                 <li>Upload historical data</li>
-                <li>Map date, product, and units columns</li>
+                <li>Map date, sales, product, store, and price columns</li>
                 <li>Preview before running AI models</li>
               </ol>
             </div>
@@ -241,7 +402,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                 </div>
               </div>
               <p className="forecast-section-subtitle">
-                Drag or select your historical CSV. We look for date, product/category, and unit columns.
+                Drag or select your historical CSV/XLSX. We look for date, sales, product, store, and price columns.
               </p>
               <label
                 className={`upload-dropzone ${uploadedFileName ? "has-file" : ""}`}
@@ -251,7 +412,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                 <input
                   id="forecast-upload"
                   type="file"
-                  accept=".csv"
+                  accept=".csv,.xlsx,.xls"
                   onChange={handleFileChange}
                   disabled={Boolean(uploadedFileName)}
                   ref={fileInputRef}
@@ -281,7 +442,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                     <>
                       <p>Drop CSV file here</p>
                       <p>Or browse files on your system</p>
-                      <p className="upload-secondary">[Supported formats: CSV (Recommended), XLSX]</p>
+                      <p className="upload-secondary">[Supported formats: CSV (Recommended), Excel (.xlsx, .xls)]</p>
                       <p className="upload-secondary">[Max file size: 50MB]</p>
                     </>
                   )}
@@ -297,8 +458,8 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                 </div>
                 <span className="status-pill status-pill-secondary">Auto-detected</span>
               </div>
-              <p className="forecast-section-subtitle">
-                Confirm the headers that correspond to dates, product categories, and shipped units.
+              <p className="mapping-description">
+                System have auto-detected columns. You can adjust them if needed.
               </p>
               <div className="mapping-grid">
                 <label className="mapping-column">
@@ -308,47 +469,102 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                     onChange={(event) => setDateColumn(event.target.value)}
                     disabled={!columns.length}
                   >
-                    <option value="">Select column</option>
+                    <option value="">Not Available</option>
                     {columns.map((column) => (
-                      <option key={column} value={column}>
+                      <option key={`date-${column}`} value={column}>
                         {column}
                       </option>
                     ))}
                   </select>
+                  <small className="mapping-detected">
+                    Detected: {dateColumn || "Not Available"}
+                  </small>
                 </label>
 
                 <label className="mapping-column">
-                  <span>Category column</span>
+                  <span>Sales column</span>
                   <select
-                    value={categoryColumn}
-                    onChange={(event) => setCategoryColumn(event.target.value)}
+                    value={salesColumn}
+                    onChange={(event) => setSalesColumn(event.target.value)}
                     disabled={!columns.length}
                   >
-                    <option value="">Select column</option>
+                    <option value="">Not Available</option>
                     {columns.map((column) => (
-                      <option key={column} value={column}>
+                      <option key={`sales-${column}`} value={column}>
                         {column}
                       </option>
                     ))}
                   </select>
+                  <small className="mapping-detected">
+                    Detected: {salesColumn || "Not Available"}
+                  </small>
                 </label>
 
                 <label className="mapping-column">
-                  <span>Units column</span>
+                  <span>Product column</span>
                   <select
-                    value={unitsColumn}
-                    onChange={(event) => setUnitsColumn(event.target.value)}
+                    value={productColumn}
+                    onChange={(event) => setProductColumn(event.target.value)}
                     disabled={!columns.length}
                   >
-                    <option value="">Select column</option>
+                    <option value="">Not Available</option>
                     {columns.map((column) => (
-                      <option key={column} value={column}>
+                      <option key={`product-${column}`} value={column}>
                         {column}
                       </option>
                     ))}
                   </select>
+                  <small className="mapping-detected">
+                    Detected: {productColumn || "Not Available"}
+                  </small>
+                </label>
+
+                <label className="mapping-column">
+                  <span>Store column</span>
+                  <select
+                    value={storeColumn}
+                    onChange={(event) => setStoreColumn(event.target.value)}
+                    disabled={!columns.length}
+                  >
+                    <option value="">Not Available</option>
+                    {columns.map((column) => (
+                      <option key={`store-${column}`} value={column}>
+                        {column}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="mapping-detected">
+                    Detected: {storeColumn || "Not Available"}
+                  </small>
+                </label>
+
+                <label className="mapping-column">
+                  <span>Price column</span>
+                  <select
+                    value={priceColumn}
+                    onChange={(event) => setPriceColumn(event.target.value)}
+                    disabled={!columns.length}
+                  >
+                    <option value="">Not Available</option>
+                    {columns.map((column) => (
+                      <option key={`price-${column}`} value={column}>
+                        {column}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="mapping-detected">
+                    Detected: {priceColumn || "Not Available"}
+                  </small>
                 </label>
               </div>
+              <button
+                type="button"
+                className="confirm-mapping demand-cta"
+                onClick={handleConfirmMapping}
+                disabled={!columns.length}
+              >
+                Confirm Mapping
+              </button>
             </section>
 
             <section className="forecast-section">
@@ -359,6 +575,9 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                 <div className="preview-meta">
                   <span>{previewRows.length} sample rows</span>
                   <span>{columns.length} detected columns</span>
+                  {cleanedRows.length ? (
+                    <span>{cleanedRows.length} cleaned rows ready</span>
+                  ) : null}
                 </div>
               </div>
               <p className="forecast-section-subtitle">
