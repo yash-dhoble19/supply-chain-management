@@ -171,12 +171,22 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
             </div>
             <div>
               <h2>Start your first forecast</h2>
-              <p>Turn data into demand insights with intelligent forecasting and real-time decision support.</p>
+              <p>Turn data into demand insights with intelligent forecasting.</p>
+              <p className="demand-steps-title">Get started in 3 simple steps:</p>
+              <ol className="demand-steps">
+                <li>1. Upload historical data</li>
+                <li>2. Select products &amp; timeframe</li>
+                <li>3. Generate forecast</li>
+              </ol>
             </div>
           </div>
 
-          <button className="demand-cta" type="button">
-            🚀 Create Forecast
+          <button
+            className="demand-cta"
+            type="button"
+            onClick={() => onNavigate("createForecast")}
+          >
+            🚀 Create Demand Forecast
           </button>
 
           <div className="demand-feature-grid">
@@ -189,6 +199,12 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
                 <p className="demand-feature-desc">{f.desc}</p>
               </div>
             ))}
+          </div>
+
+          <div className="demand-conclusion">
+            <p className="demand-conclusion-body">
+              -: Predict Smarter, Stock Better, Decide Faster — ChainMind keeps insights transparent, demand-ready, and ready for action :-
+            </p>
           </div>
         </div>
       </main>

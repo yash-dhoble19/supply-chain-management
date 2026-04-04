@@ -39,7 +39,7 @@ export function Header({
           <span className="material-symbols-outlined">menu</span>
         </button>
         <div className="flex flex-col gap-1">
-          <h2 className="text-[1.5rem] font-bold tracking-tight text-slate-900">{title}</h2>
+          <h2 className="text-[1.85rem] font-bold tracking-tight text-slate-900">{title}</h2>
           {subtitle ? (
             <p className="text-sm text-on-surface-variant">{subtitle}</p>
           ) : null}

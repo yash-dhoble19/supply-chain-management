@@ -4,4 +4,5 @@ export type AppPage =
   | "logistics"
   | "procurement"
   | "purchaseOrders"
-  | "demandForecasting";
+  | "demandForecasting"
+  | "createForecast";

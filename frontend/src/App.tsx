@@ -26,6 +26,11 @@ const PurchaseOrdersPage = lazy(() =>
     default: module.PurchaseOrdersPage,
   })),
 );
+const CreateForecast = lazy(() =>
+  import("./pages/CreateForecast").then((module) => ({
+    default: module.CreateForecast,
+  })),
+);
 const DemandForecasting = lazy(() =>
   import("./pages/DemandForecasting").then((module) => ({
     default: module.DemandForecasting,
@@ -39,6 +44,7 @@ const pathByPage: Record<AppPage, string> = {
   procurement: "/procurement",
   purchaseOrders: "/purchase-orders",
   demandForecasting: "/demand-forecasting",
+  createForecast: "/create-forecast",
 };
 
 function getPageFromPath(pathname: string): AppPage {
@@ -53,6 +59,8 @@ function getPageFromPath(pathname: string): AppPage {
       return "purchaseOrders";
     case "/demand-forecasting":
       return "demandForecasting";
+    case "/create-forecast":
+      return "createForecast";
     case "/":
     case "/procurement":
     default:
@@ -102,6 +110,9 @@ function App() {
       ) : null}
       {activePage === "demandForecasting" ? (
         <DemandForecasting activePage={activePage} onNavigate={navigate} />
+      ) : null}
+      {activePage === "createForecast" ? (
+        <CreateForecast activePage={activePage} onNavigate={navigate} />
       ) : null}
       {activePage === "procurement" ? (
         <ProcurementIntelligence activePage={activePage} onNavigate={navigate} />
