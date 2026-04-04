@@ -21,6 +21,20 @@ interface DataMapping {
   priceColumn: string;
 }
 
+interface ValidationModalInfo {
+  title: string;
+  message: string;
+  bullets: string[];
+}
+
+interface DataSummary {
+  fileName: string;
+  rows: number;
+  columns: number;
+  duplicatesRemoved: number;
+  status: string;
+}
+
 interface CreateForecastProps {
   activePage: AppPage;
   onNavigate: (page: AppPage) => void;
@@ -143,6 +157,65 @@ const cleanForecastData = (
   return cleaned;
 };
 
+const isNumericColumn = (rows: CsvRow[], column: string) => {
+  if (!column) {
+    return false;
+  }
+
+  const sample = rows.slice(0, 40);
+  let total = 0;
+  let numeric = 0;
+
+  sample.forEach((row) => {
+    const value = (row[column] ?? "").trim();
+    if (!value) {
+      return;
+    }
+
+    total += 1;
+    const normalized = value.replace(/[^0-9.\-]/g, "");
+    const parsed = Number(normalized);
+    if (!Number.isNaN(parsed)) {
+      numeric += 1;
+    }
+  });
+
+  if (total === 0) {
+    return false;
+  }
+
+  return numeric / total >= 0.7;
+};
+
+const isDateColumn = (rows: CsvRow[], column: string) => {
+  if (!column) {
+    return false;
+  }
+
+  const sample = rows.slice(0, 40);
+  let total = 0;
+  let validDates = 0;
+
+  sample.forEach((row) => {
+    const value = (row[column] ?? "").trim();
+    if (!value) {
+      return;
+    }
+
+    total += 1;
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) {
+      validDates += 1;
+    }
+  });
+
+  if (total === 0) {
+    return false;
+  }
+
+  return validDates / total >= 0.6;
+};
+
 const pickColumn = (headers: string[], keywords: string[]) => {
   const normalized = headers.map((column) => column.toLowerCase());
 
@@ -169,6 +242,8 @@ const formatFileSize = (size: number) => {
   return `${(size / 1024 ** 3).toFixed(1)} GB`;
 };
 
+const formatNumber = (value: number) => value.toLocaleString();
+
 export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -183,6 +258,9 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const [productColumn, setProductColumn] = useState("");
   const [storeColumn, setStoreColumn] = useState("");
   const [priceColumn, setPriceColumn] = useState("");
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationModal, setValidationModal] = useState<ValidationModalInfo | null>(null);
+  const [dataSummary, setDataSummary] = useState<DataSummary | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [fileSizeLabel, setFileSizeLabel] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -194,19 +272,6 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     storeColumn,
     priceColumn,
   });
-
-  const rebuildCleanedRows = () => {
-    if (!columns.length || !rawRows.length) {
-      return;
-    }
-
-    setCleanedRows(cleanForecastData(rawRows, columns, buildCurrentMapping()));
-  };
-
-  const handleConfirmMapping = () => {
-    rebuildCleanedRows();
-    setStatusMessage("Column mapping confirmed. Cleaned data is ready for forecasting.");
-  };
 
   const clearUploadedFile = () => {
     setUploadedFileName(null);
@@ -221,6 +286,9 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     setProductColumn("");
     setStoreColumn("");
     setPriceColumn("");
+    setIsValidating(false);
+    setValidationModal(null);
+    setDataSummary(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -230,6 +298,83 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     if (uploadedFileName) {
       event.preventDefault();
     }
+  };
+
+  const handleConfirmMapping = () => {
+    if (!columns.length || !rawRows.length) {
+      setStatusMessage("Upload a dataset before confirming the mapping.");
+      return;
+    }
+
+    const mapping = buildCurrentMapping();
+    setIsValidating(true);
+    setValidationModal(null);
+    setDataSummary(null);
+    setStatusMessage("Validating your data...");
+    setCleanedRows([]);
+
+    const runValidation = () => {
+      const missingFields: string[] = [];
+      if (!mapping.dateColumn) {
+        missingFields.push("Date column");
+      }
+      if (!mapping.salesColumn) {
+        missingFields.push("Sales column");
+      }
+
+      if (missingFields.length) {
+        setValidationModal({
+          title: "Required data not found",
+          message: "Please map valid:",
+          bullets: missingFields,
+        });
+        setStatusMessage("Required columns are missing.");
+        setIsValidating(false);
+        return;
+      }
+
+      const invalidSales = !isNumericColumn(rawRows, mapping.salesColumn);
+      const invalidDate = !isDateColumn(rawRows, mapping.dateColumn);
+
+      if (invalidSales || invalidDate) {
+        setValidationModal({
+          title: "Invalid column selection",
+          message: "Please ensure:",
+          bullets: [
+            "Sales column contains numeric values",
+            "Date column contains valid dates",
+          ],
+        });
+        setStatusMessage("Invalid column selection detected.");
+        setIsValidating(false);
+        return;
+      }
+
+      const cleaned = cleanForecastData(rawRows, columns, mapping);
+      if (cleaned.length < 30) {
+        setValidationModal({
+          title: "Insufficient data",
+          message: "At least 30 records are required to generate a forecast.",
+          bullets: [],
+        });
+        setStatusMessage("Insufficient data after cleaning.");
+        setIsValidating(false);
+        return;
+      }
+
+      setCleanedRows(cleaned);
+      setDataSummary({
+        fileName: uploadedFileName ?? "Uploaded file",
+        rows: cleaned.length,
+        columns: columns.length,
+        duplicatesRemoved: Math.max(0, rawRows.length - cleaned.length),
+        status: "Ready for forecasting",
+      });
+      setStatusMessage("Data cleaned successfully. Ready for forecasting.");
+      setIsValidating(false);
+    };
+
+    setTimeout(runValidation, 400);
   };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -294,12 +439,9 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
         priceColumn: detectedPriceColumn,
       };
 
-      const cleaned = cleanForecastData(parsed.rawRows, parsed.headers, detectedMapping);
-
       setColumns(parsed.headers);
       setPreviewRows(parsed.previewRows);
       setRawRows(parsed.rawRows);
-      setCleanedRows(cleaned);
       setDateColumn(detectedDateColumn);
       setSalesColumn(detectedSalesColumn);
       setProductColumn(detectedProductColumn);
@@ -307,9 +449,10 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       setPriceColumn(detectedPriceColumn);
       setUploadedFileName(file.name);
       setFileSizeLabel(formatFileSize(file.size));
-      setStatusMessage(
-        "Parsed and cleaned the uploaded data. Please confirm column mapping below."
-      );
+      setCleanedRows([]);
+      setDataSummary(null);
+      setValidationModal(null);
+      setStatusMessage("Parsed the uploaded data. Please confirm column mapping below.");
     };
 
     const reader = new FileReader();
@@ -451,6 +594,38 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
               {statusMessage ? <p className="status-text">{statusMessage}</p> : null}
             </section>
 
+            {dataSummary ? (
+              <section className="forecast-section data-summary-card">
+                <div className="data-summary-title">
+                  <h3>Data summary</h3>
+                  <p>Cleaned dataset ready for forecasting</p>
+                </div>
+                <div className="summary-grid">
+                  <div>
+                    <p>File</p>
+                    <strong>{dataSummary.fileName}</strong>
+                  </div>
+                  <div>
+                    <p>Rows</p>
+                    <strong>{formatNumber(dataSummary.rows)}</strong>
+                  </div>
+                  <div>
+                    <p>Columns</p>
+                    <strong>{formatNumber(dataSummary.columns)}</strong>
+                  </div>
+                  <div>
+                    <p>Duplicates removed</p>
+                    <strong>{formatNumber(dataSummary.duplicatesRemoved)}</strong>
+                  </div>
+                </div>
+                <div className="summary-checks">
+                  <span>✔ Data cleaned successfully</span>
+                  <span>✔ Duplicates removed</span>
+                </div>
+                <p className="summary-status">Status: {dataSummary.status}</p>
+              </section>
+            ) : null}
+
             <section className="forecast-section">
               <div className="forecast-section-header">
                 <div>
@@ -561,9 +736,9 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                 type="button"
                 className="confirm-mapping demand-cta"
                 onClick={handleConfirmMapping}
-                disabled={!columns.length}
+                disabled={!columns.length || isValidating}
               >
-                Confirm Mapping
+                {isValidating ? "Validating your data..." : "Confirm Mapping"}
               </button>
             </section>
 
@@ -617,6 +792,30 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
           </div>
         </div>
       </main>
+
+      {validationModal && (
+        <div className="demand-modal-backdrop">
+          <div className="demand-modal">
+            <button
+              type="button"
+              className="demand-modal-close"
+              onClick={() => setValidationModal(null)}
+              aria-label="Close validation modal"
+            >
+              ×
+            </button>
+            <h3>{validationModal.title}</h3>
+            <p className="demand-modal-description">{validationModal.message}</p>
+            {validationModal.bullets.length ? (
+              <div className="demand-modal-flow">
+                {validationModal.bullets.map((bullet) => (
+                  <span key={bullet}>• {bullet}</span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -780,6 +780,12 @@ body {
   line-height: 1.6;
 }
 
+.mapping-description {
+  margin: 0;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
 .upload-dropzone {
   border: 2px dashed #c7d2fe;
   border-radius: 14px;
@@ -909,6 +915,66 @@ body {
 .mapping-column select:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.data-summary-card {
+  border-color: #c7d2fe;
+  background: #f5f7ff;
+  padding-bottom: 24px;
+}
+
+.data-summary-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.data-summary-title h3 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.data-summary-title p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.summary-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.summary-grid p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+}
+
+.summary-grid strong {
+  font-size: 1.15rem;
+  color: #0f172a;
+  display: block;
+  margin-top: 4px;
+}
+
+.summary-checks {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.summary-status {
+  margin-top: 12px;
+  font-weight: 600;
+  color: #0f172a;
 }
 
 .confirm-mapping {
