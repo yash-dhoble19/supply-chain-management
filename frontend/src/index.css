@@ -748,6 +748,25 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.forecast-section::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  height: 3px;
+  border-radius: 999px;
+  background: #3b82f6;
+}
+
+.forecast-section.data-summary-card::before,
+.forecast-section.mapping-success-banner::before {
+  left: 12px;
+  right: 12px;
 }
 
 .forecast-section-header {
