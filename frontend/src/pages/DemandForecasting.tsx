@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
 import type { AppPage } from "../types/app.types";
+import type { KeyboardEvent } from "react";
 
 const icons = {
   logo: (
@@ -140,6 +141,36 @@ interface DemandForecastingProps {
 export function DemandForecasting({ activePage, onNavigate }: DemandForecastingProps) {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [intelModalOpen, setIntelModalOpen] = useState(false);
+  const [multiDimModalOpen, setMultiDimModalOpen] = useState(false);
+  const [scenarioModalOpen, setScenarioModalOpen] = useState(false);
+
+  const openFeatureModal = (label: string) => {
+    if (label === "Intelligent Forecasting") {
+      setIntelModalOpen(true);
+      return;
+    }
+    if (label === "Multi-Dimensional Insights") {
+      setMultiDimModalOpen(true);
+      return;
+    }
+    if (label === "Scenario Simulation") {
+      setScenarioModalOpen(true);
+    }
+  };
+
+  const handleFeatureKeyDown =
+    (label: string) => (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openFeatureModal(label);
+      }
+    };
+
+  const isInteractiveFeature = (label: string) =>
+    label === "Intelligent Forecasting" ||
+    label === "Multi-Dimensional Insights" ||
+    label === "Scenario Simulation";
 
   const lastUpdated = new Date();
 
@@ -170,6 +201,7 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
               <span className="demand-hero-icon-inner">{icons.barChart}</span>
             </div>
             <div>
+              <p className="demand-welcome">Welcome back, Marcus 👋</p>
               <h2>Start your first forecast</h2>
               <p>Turn data into demand insights with intelligent forecasting.</p>
               <p className="demand-steps-title">Get started in 3 simple steps:</p>
@@ -190,15 +222,26 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
           </button>
 
           <div className="demand-feature-grid">
-            {features.map((f) => (
-              <div key={f.label} className="demand-feature-card" style={{ borderTopColor: f.borderColor }}>
-                <div className="demand-feature-icon" style={{ background: f.iconBg }}>
-                  {f.icon}
+            {features.map((f) => {
+              const interactive = isInteractiveFeature(f.label);
+              return (
+                <div
+                  key={f.label}
+                  className="demand-feature-card"
+                  style={{ borderTopColor: f.borderColor }}
+                  role={interactive ? "button" : undefined}
+                  tabIndex={interactive ? 0 : undefined}
+                  onClick={interactive ? () => openFeatureModal(f.label) : undefined}
+                  onKeyDown={interactive ? handleFeatureKeyDown(f.label) : undefined}
+                >
+                  <div className="demand-feature-icon" style={{ background: f.iconBg }}>
+                    {f.icon}
+                  </div>
+                  <div className="demand-feature-label">{f.label}</div>
+                  <p className="demand-feature-desc">{f.desc}</p>
                 </div>
-                <div className="demand-feature-label">{f.label}</div>
-                <p className="demand-feature-desc">{f.desc}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="demand-conclusion">
@@ -206,6 +249,126 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
               -: Predict Smarter, Stock Better, Decide Faster — ChainMind keeps insights transparent, demand-ready, and ready for action :-
             </p>
           </div>
+          {intelModalOpen && (
+            <div className="demand-modal-backdrop" onClick={() => setIntelModalOpen(false)}>
+              <div className="demand-modal" onClick={(event) => event.stopPropagation()}>
+                <button
+                  type="button"
+                  className="demand-modal-close"
+                  aria-label="Close details"
+                  onClick={() => setIntelModalOpen(false)}
+                >
+                  ×
+                </button>
+                <h3>Intelligent Data-Driven Forecasting</h3>
+                <p className="demand-modal-description">
+                  Our system analyzes historical sales, seasonality, trends, and external factors like weather and festivals to generate accurate predictions.
+                </p>
+                <div className="demand-modal-flow demand-modal-flow-steps">
+                  <span>Raw Data Input</span>
+                  <span className="demand-modal-flow-arrow">↓</span>
+                  <span>Data Cleaning</span>
+                  <span className="demand-modal-flow-arrow">↓</span>
+                  <span>Extracting Features</span>
+                  <span className="demand-modal-flow-arrow">↓</span>
+                  <span>Data Segmentation</span>
+                  <span className="demand-modal-flow-arrow">↓</span>
+                  <span>ML Models</span>
+                  <span className="demand-modal-flow-arrow">↓</span>
+                  <span>Forecast Generation</span>
+                </div>
+                <div className="demand-modal-capabilities">
+                  <div className="demand-modal-cap-heading">Key Capabilities:</div>
+                  <ul>
+                    <li>✔ Machine Learning Models (Random Forest, Gradient Boosting)</li>
+                    <li>✔ Baseline comparison using Moving Average</li>
+                    <li>✔ Segment-based forecasting (seasonal, stable, irregular demand)</li>
+                    <li>✔ Continuous learning and model improvement</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+          {multiDimModalOpen && (
+            <div className="demand-modal-backdrop" onClick={() => setMultiDimModalOpen(false)}>
+              <div className="demand-modal" onClick={(event) => event.stopPropagation()}>
+                <button
+                  type="button"
+                  className="demand-modal-close"
+                  aria-label="Close details"
+                  onClick={() => setMultiDimModalOpen(false)}
+                >
+                  ×
+                </button>
+                <h3>Gain complete visibility into demand patterns across multiple dimensions.</h3>
+                <p className="demand-modal-description">
+                  Use these insights to optimize inventory, improve logistics planning, and make data-driven business decisions.
+                </p>
+                <div className="demand-modal-flow">
+                  <span>Product → What will sell</span>
+                  <span>Location → Where it will sell</span>
+                  <span>Time → When demand will rise</span>
+                  <span>Season → Why demand changes</span>
+                </div>
+                <div className="demand-modal-capabilities">
+                  <div className="demand-modal-cap-heading">Key Capabilities:</div>
+                  <ul>
+                    <li>✔ Product-level demand forecasting</li>
+                    <li>✔ Location-wise insights (city, warehouse, region)</li>
+                    <li>✔ Flexible time horizons (7, 30, 90 days)</li>
+                    <li>✔ Seasonal trends and demand patterns</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+          {scenarioModalOpen && (
+            <div className="demand-modal-backdrop" onClick={() => setScenarioModalOpen(false)}>
+              <div className="demand-modal" onClick={(event) => event.stopPropagation()}>
+                <button
+                  type="button"
+                  className="demand-modal-close"
+                  aria-label="Close details"
+                  onClick={() => setScenarioModalOpen(false)}
+                >
+                  ×
+                </button>
+                <h3>Test business decisions before applying them in the real world.</h3>
+                <div className="demand-modal-flow demand-modal-flow-steps">
+                  <span>Modify Inputs</span>
+                  <span className="demand-modal-flow-arrow">↓</span>
+                  <span>Recalculate Demand</span>
+                  <span className="demand-modal-flow-arrow">↓</span>
+                  <span>Compare Results</span>
+                </div>
+                <div className="demand-modal-capabilities">
+                  <div className="demand-modal-cap-heading">What you can simulate:</div>
+                  <ul>
+                    <li>✔ Price changes</li>
+                    <li>✔ Discounts and promotions</li>
+                    <li>✔ Festivals and seasonal events</li>
+                    <li>✔ Weather impact</li>
+                    <li>✔ Market trends</li>
+                  </ul>
+                </div>
+                <div className="demand-modal-capabilities">
+                  <div className="demand-modal-cap-heading">What you get:</div>
+                  <ul>
+                    <li>✔ Updated demand forecast</li>
+                    <li>✔ Impact analysis (% change)</li>
+                    <li>✔ Before vs After comparison</li>
+                    <li>✔ Clear decision insights</li>
+                  </ul>
+                </div>
+                <div className="demand-modal-example">
+                  <p>Example:</p>
+                  <p className="demand-modal-example-quote">
+                    “What if price drops by 10%?” → Instantly see the expected change in demand.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>

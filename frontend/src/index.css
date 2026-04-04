@@ -447,6 +447,13 @@ body {
   margin: 0;
 }
 
+.demand-welcome {
+  font-size: 16px;
+  font-weight: 500;
+  color: #475569;
+  margin: 0 0 6px;
+}
+
 .demand-steps-title {
   font-size: 16px;
   font-weight: 600;
@@ -462,6 +469,125 @@ body {
   flex-direction: column;
   gap: 6px;
   font-size: 15px;
+  color: #475569;
+}
+
+.demand-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+}
+
+.demand-modal {
+  background: #fff;
+  border-radius: 20px;
+  padding: 32px;
+  max-width: 420px;
+  width: min(90vw, 420px);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: left;
+}
+
+.demand-modal h3 {
+  margin: 0;
+  font-size: 20px;
+  color: #0f172a;
+}
+
+.demand-modal-description {
+  margin: 0;
+  font-size: 15px;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.demand-modal-flow {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e3a8a;
+  background: #eef2ff;
+  padding: 8px 12px;
+  border-radius: 12px;
+  text-align: left;
+}
+
+.demand-modal-flow span {
+  display: block;
+  line-height: 1.4;
+  padding: 4px 0;
+}
+
+.demand-modal-flow-steps {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.demand-modal-flow-steps span {
+  padding: 0;
+  font-size: 15px;
+}
+
+.demand-modal-flow-arrow {
+  font-size: 18px;
+  color: #0e1a3b;
+}
+
+.demand-modal-capabilities {
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.demand-modal-cap-heading {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.demand-modal-capabilities ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.demand-modal-example {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 14px;
+  color: #475569;
+}
+
+.demand-modal-example p {
+  margin: 4px 0;
+}
+
+.demand-modal-example-quote {
+  font-weight: 600;
+  font-style: italic;
+  color: #0f172a;
+  margin-top: 0;
+}
+
+.demand-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
   color: #475569;
 }
 
