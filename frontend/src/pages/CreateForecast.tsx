@@ -250,7 +250,6 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const lastUpdated = new Date();
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [columns, setColumns] = useState<string[]>([]);
-  const [previewRows, setPreviewRows] = useState<Record<string, string>[]>([]);
   const [rawRows, setRawRows] = useState<CsvRow[]>([]);
   const [cleanedRows, setCleanedRows] = useState<CsvRow[]>([]);
   const [dateColumn, setDateColumn] = useState("");
@@ -261,9 +260,16 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const [isValidating, setIsValidating] = useState(false);
   const [validationModal, setValidationModal] = useState<ValidationModalInfo | null>(null);
   const [dataSummary, setDataSummary] = useState<DataSummary | null>(null);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [fileSizeLabel, setFileSizeLabel] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const togglePreview = () => {
+    setPreviewExpanded((prev) => !prev);
+  };
+
+  const previewRows = rawRows.slice(0, 5);
 
   const buildCurrentMapping = (): DataMapping => ({
     dateColumn,
@@ -277,7 +283,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     setUploadedFileName(null);
     setFileSizeLabel(null);
     setColumns([]);
-    setPreviewRows([]);
+    // previewRows derived from rawRows, no need to reset separately
     setRawRows([]);
     setCleanedRows([]);
     setStatusMessage(null);
@@ -289,6 +295,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     setIsValidating(false);
     setValidationModal(null);
     setDataSummary(null);
+    setPreviewExpanded(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -310,6 +317,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     setIsValidating(true);
     setValidationModal(null);
     setDataSummary(null);
+    setPreviewExpanded(false);
     setStatusMessage("Validating your data...");
     setCleanedRows([]);
 
@@ -370,6 +378,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
         duplicatesRemoved: Math.max(0, rawRows.length - cleaned.length),
         status: "Ready for forecasting",
       });
+      setPreviewExpanded(true);
       setStatusMessage("Data cleaned successfully. Ready for forecasting.");
       setIsValidating(false);
     };
@@ -440,7 +449,6 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       };
 
       setColumns(parsed.headers);
-      setPreviewRows(parsed.previewRows);
       setRawRows(parsed.rawRows);
       setDateColumn(detectedDateColumn);
       setSalesColumn(detectedSalesColumn);
@@ -626,167 +634,181 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
               </section>
             ) : null}
 
-            <section className="forecast-section">
-              <div className="forecast-section-header">
-                <div>
-                  <h3>Column Mapping</h3>
+            {!dataSummary && (
+              <section className="forecast-section">
+                <div className="forecast-section-header">
+                  <div>
+                    <h3>Column Mapping</h3>
+                  </div>
+                  <span className="status-pill status-pill-secondary">Auto-detected</span>
                 </div>
-                <span className="status-pill status-pill-secondary">Auto-detected</span>
-              </div>
-              <p className="mapping-description">
-                System have auto-detected columns. You can adjust them if needed.
-              </p>
-              <div className="mapping-grid">
-                <label className="mapping-column">
-                  <span>Date column</span>
-                  <select
-                    value={dateColumn}
-                    onChange={(event) => setDateColumn(event.target.value)}
-                    disabled={!columns.length}
-                  >
-                    <option value="">Not Available</option>
-                    {columns.map((column) => (
-                      <option key={`date-${column}`} value={column}>
-                        {column}
-                      </option>
-                    ))}
-                  </select>
-                  <small className="mapping-detected">
-                    Detected: {dateColumn || "Not Available"}
-                  </small>
-                </label>
+                <p className="mapping-description">
+                  System have auto-detected columns. You can adjust them if needed.
+                </p>
+                <div className="mapping-grid">
+                  <label className="mapping-column">
+                    <span>Date column</span>
+                    <select
+                      value={dateColumn}
+                      onChange={(event) => setDateColumn(event.target.value)}
+                      disabled={!columns.length}
+                    >
+                      <option value="">Not Available</option>
+                      {columns.map((column) => (
+                        <option key={`date-${column}`} value={column}>
+                          {column}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="mapping-detected">
+                      Detected: {dateColumn || "Not Available"}
+                    </small>
+                  </label>
 
-                <label className="mapping-column">
-                  <span>Sales column</span>
-                  <select
-                    value={salesColumn}
-                    onChange={(event) => setSalesColumn(event.target.value)}
-                    disabled={!columns.length}
-                  >
-                    <option value="">Not Available</option>
-                    {columns.map((column) => (
-                      <option key={`sales-${column}`} value={column}>
-                        {column}
-                      </option>
-                    ))}
-                  </select>
-                  <small className="mapping-detected">
-                    Detected: {salesColumn || "Not Available"}
-                  </small>
-                </label>
+                  <label className="mapping-column">
+                    <span>Sales column</span>
+                    <select
+                      value={salesColumn}
+                      onChange={(event) => setSalesColumn(event.target.value)}
+                      disabled={!columns.length}
+                    >
+                      <option value="">Not Available</option>
+                      {columns.map((column) => (
+                        <option key={`sales-${column}`} value={column}>
+                          {column}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="mapping-detected">
+                      Detected: {salesColumn || "Not Available"}
+                    </small>
+                  </label>
 
-                <label className="mapping-column">
-                  <span>Product column</span>
-                  <select
-                    value={productColumn}
-                    onChange={(event) => setProductColumn(event.target.value)}
-                    disabled={!columns.length}
-                  >
-                    <option value="">Not Available</option>
-                    {columns.map((column) => (
-                      <option key={`product-${column}`} value={column}>
-                        {column}
-                      </option>
-                    ))}
-                  </select>
-                  <small className="mapping-detected">
-                    Detected: {productColumn || "Not Available"}
-                  </small>
-                </label>
+                  <label className="mapping-column">
+                    <span>Product column</span>
+                    <select
+                      value={productColumn}
+                      onChange={(event) => setProductColumn(event.target.value)}
+                      disabled={!columns.length}
+                    >
+                      <option value="">Not Available</option>
+                      {columns.map((column) => (
+                        <option key={`product-${column}`} value={column}>
+                          {column}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="mapping-detected">
+                      Detected: {productColumn || "Not Available"}
+                    </small>
+                  </label>
 
-                <label className="mapping-column">
-                  <span>Store column</span>
-                  <select
-                    value={storeColumn}
-                    onChange={(event) => setStoreColumn(event.target.value)}
-                    disabled={!columns.length}
-                  >
-                    <option value="">Not Available</option>
-                    {columns.map((column) => (
-                      <option key={`store-${column}`} value={column}>
-                        {column}
-                      </option>
-                    ))}
-                  </select>
-                  <small className="mapping-detected">
-                    Detected: {storeColumn || "Not Available"}
-                  </small>
-                </label>
+                  <label className="mapping-column">
+                    <span>Store column</span>
+                    <select
+                      value={storeColumn}
+                      onChange={(event) => setStoreColumn(event.target.value)}
+                      disabled={!columns.length}
+                    >
+                      <option value="">Not Available</option>
+                      {columns.map((column) => (
+                        <option key={`store-${column}`} value={column}>
+                          {column}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="mapping-detected">
+                      Detected: {storeColumn || "Not Available"}
+                    </small>
+                  </label>
 
-                <label className="mapping-column">
-                  <span>Price column</span>
-                  <select
-                    value={priceColumn}
-                    onChange={(event) => setPriceColumn(event.target.value)}
-                    disabled={!columns.length}
-                  >
-                    <option value="">Not Available</option>
-                    {columns.map((column) => (
-                      <option key={`price-${column}`} value={column}>
-                        {column}
-                      </option>
-                    ))}
-                  </select>
-                  <small className="mapping-detected">
-                    Detected: {priceColumn || "Not Available"}
-                  </small>
-                </label>
-              </div>
-              <button
-                type="button"
-                className="confirm-mapping demand-cta"
-                onClick={handleConfirmMapping}
-                disabled={!columns.length || isValidating}
-              >
-                {isValidating ? "Validating your data..." : "Confirm Mapping"}
-              </button>
-            </section>
+                  <label className="mapping-column">
+                    <span>Price column</span>
+                    <select
+                      value={priceColumn}
+                      onChange={(event) => setPriceColumn(event.target.value)}
+                      disabled={!columns.length}
+                    >
+                      <option value="">Not Available</option>
+                      {columns.map((column) => (
+                        <option key={`price-${column}`} value={column}>
+                          {column}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="mapping-detected">
+                      Detected: {priceColumn || "Not Available"}
+                    </small>
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="confirm-mapping demand-cta"
+                  onClick={handleConfirmMapping}
+                  disabled={!columns.length || isValidating}
+                >
+                  {isValidating ? "Validating your data..." : "Confirm Mapping"}
+                </button>
+              </section>
+            )}
 
-            <section className="forecast-section">
-              <div className="forecast-section-header">
+            <section className="forecast-section preview-section">
+              <div className="forecast-section-header preview-header">
                 <div>
                   <h3>Data preview</h3>
+                  <p className="forecast-section-subtitle">
+                    Preview the rows fed into the model. Use this view to double-check formatting before continuing.
+                  </p>
                 </div>
-                <div className="preview-meta">
-                  <span>{previewRows.length} sample rows</span>
-                  <span>{columns.length} detected columns</span>
-                  {cleanedRows.length ? (
-                    <span>{cleanedRows.length} cleaned rows ready</span>
-                  ) : null}
+                <div className="preview-header-right">
+                  <div className="preview-meta">
+                    <span>{previewRows.length} sample rows</span>
+                    <span>{columns.length} detected columns</span>
+                    {cleanedRows.length ? (
+                      <span>{cleanedRows.length} cleaned rows ready</span>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="preview-toggle"
+                    onClick={togglePreview}
+                    aria-label={previewExpanded ? "Hide preview" : "Show preview"}
+                  >
+                    {previewExpanded ? "↑" : "↓"}
+                  </button>
                 </div>
               </div>
-              <p className="forecast-section-subtitle">
-                Preview the rows fed into the model. Use this view to double-check formatting before continuing.
-              </p>
-              <div className="preview-table">
-                {columns.length ? (
-                  <>
-                    <div className="preview-table-row preview-table-header">
-                      {columns.map((column) => (
-                        <span key={`header-${column}`}>{column}</span>
-                      ))}
-                    </div>
-                    {previewRows.length ? (
-                      previewRows.map((row, rowIndex) => (
-                        <div className="preview-table-row" key={`row-${rowIndex}`}>
-                          {columns.map((column) => (
-                            <span key={`${rowIndex}-${column}`}>
-                              {row[column] || "—"}
-                            </span>
-                          ))}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="preview-table-empty">
-                        Upload a CSV to see the first rows, then confirm the mapping above.
+              <div className={`preview-table ${previewExpanded ? "expanded" : "collapsed"}`}>
+                {previewExpanded ? (
+                  columns.length ? (
+                    <div className="preview-table-scroll">
+                      <div className="preview-table-row preview-table-header">
+                        {columns.map((column) => (
+                          <span key={`header-${column}`}>{column}</span>
+                        ))}
                       </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="preview-table-empty">
-                    Start by uploading a CSV to unlock the preview.
-                  </div>
-                )}
+                      {previewRows.length ? (
+                        previewRows.map((row, rowIndex) => (
+                          <div className="preview-table-row" key={`row-${rowIndex}`}>
+                            {columns.map((column) => (
+                              <span key={`${rowIndex}-${column}`}>
+                                {row[column] || "—"}
+                              </span>
+                            ))}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="preview-table-empty">
+                          Upload a CSV to see the first rows, then confirm the mapping above.
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="preview-table-empty">
+                      Start by uploading a CSV to unlock the preview.
+                    </div>
+                  )
+                ) : null}
               </div>
             </section>
           </div>
