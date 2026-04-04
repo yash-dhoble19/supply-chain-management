@@ -1134,6 +1134,32 @@ body {
   color: #047857;
 }
 
+.mapping-success-banner {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.mapping-success-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1rem;
+  color: #065f46;
+  font-weight: 600;
+}
+
+.mapping-success-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: #d1fae5;
+  color: #047857;
+  font-weight: 700;
+}
+
 .preview-header-row {
   display: flex;
   align-items: flex-start;
