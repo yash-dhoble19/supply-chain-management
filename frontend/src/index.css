@@ -783,7 +783,7 @@ body {
 .upload-dropzone {
   border: 2px dashed #c7d2fe;
   border-radius: 14px;
-  padding: 38px;
+  padding: 28px 30px;
   background: linear-gradient(180deg, #f8fbff, #ffffff);
   color: #1f2937;
   font-weight: 600;
@@ -800,6 +800,23 @@ body {
 
 .upload-dropzone input {
   display: none;
+}
+
+.upload-dropzone.has-file {
+  padding: 18px 20px;
+  min-height: unset;
+  border-style: solid;
+  border-color: #c7d2fe;
+}
+
+.upload-dropzone.has-file .upload-loaded {
+  margin-top: 0;
+}
+
+.upload-dropzone.has-file .upload-clear {
+  pointer-events: auto;
+  top: -6px;
+  right: -6px;
 }
 
 .upload-secondary {

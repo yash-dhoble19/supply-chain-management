@@ -1,8 +1,9 @@
-import { useState } from "react";
-import type { ChangeEvent } from "react";
+import { useState, useRef } from "react";
+import type { ChangeEvent, MouseEvent } from "react";
 import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
 import type { AppPage } from "../types/app.types";
+import * as XLSX from "xlsx";
 
 interface CreateForecastProps {
   activePage: AppPage;
@@ -105,6 +106,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const [unitsColumn, setUnitsColumn] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [fileSizeLabel, setFileSizeLabel] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const clearUploadedFile = () => {
     setUploadedFileName(null);
@@ -112,6 +114,15 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     setColumns([]);
     setPreviewRows([]);
     setStatusMessage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDropzoneClick = (event: MouseEvent<HTMLLabelElement>) => {
+    if (uploadedFileName) {
+      event.preventDefault();
+    }
   };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -121,14 +132,9 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (loadEvent) => {
-      const content = loadEvent.target?.result;
-      if (typeof content !== "string") {
-        setStatusMessage("Unable to read the selected file.");
-        return;
-      }
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
 
+    const processCsv = (content: string) => {
       const parsed = parseCsvPreview(content, 6);
       if (!parsed) {
         setStatusMessage("The file looks empty. Upload a CSV with headers and rows.");
@@ -145,10 +151,45 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       setStatusMessage("Parsed file successfully. Please confirm column mapping before previewing.");
     };
 
+    const reader = new FileReader();
     reader.onerror = () => {
       setStatusMessage("Unable to read the selected file.");
     };
 
+    if (extension === "xlsx" || extension === "xls") {
+      reader.onload = () => {
+        const arrayBuffer = reader.result;
+        if (!(arrayBuffer instanceof ArrayBuffer)) {
+          setStatusMessage("Unable to parse the spreadsheet.");
+          return;
+        }
+
+        try {
+          const workbook = XLSX.read(arrayBuffer, { type: "array" });
+          if (!workbook.SheetNames.length) {
+            setStatusMessage("Spreadsheet does not contain any sheets.");
+            return;
+          }
+
+          const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]]);
+          processCsv(csv);
+        } catch {
+          setStatusMessage("Failed to convert the spreadsheet to CSV.");
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+
+    reader.onload = () => {
+      const content = reader.result;
+      if (typeof content !== "string") {
+        setStatusMessage("Unable to read the selected file.");
+        return;
+      }
+
+      processCsv(content);
+    };
     reader.readAsText(file);
   };
 
@@ -202,12 +243,18 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
               <p className="forecast-section-subtitle">
                 Drag or select your historical CSV. We look for date, product/category, and unit columns.
               </p>
-              <label className="upload-dropzone" htmlFor="forecast-upload">
+              <label
+                className={`upload-dropzone ${uploadedFileName ? "has-file" : ""}`}
+                htmlFor="forecast-upload"
+                onClick={handleDropzoneClick}
+              >
                 <input
                   id="forecast-upload"
                   type="file"
                   accept=".csv"
                   onChange={handleFileChange}
+                  disabled={Boolean(uploadedFileName)}
+                  ref={fileInputRef}
                 />
                 <div>
                   {uploadedFileName ? (
@@ -216,7 +263,10 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                         type="button"
                         className="upload-clear"
                         aria-label="Remove uploaded file"
-                        onClick={clearUploadedFile}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          clearUploadedFile();
+                        }}
                       >
                         ×
                       </button>
