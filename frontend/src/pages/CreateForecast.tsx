@@ -198,9 +198,6 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                 <div>
                   <h3>Upload &amp; Inspect</h3>
                 </div>
-                {uploadedFileName ? (
-                  <span className="status-pill">{uploadedFileName}</span>
-                ) : null}
               </div>
               <p className="forecast-section-subtitle">
                 Drag or select your historical CSV. We look for date, product/category, and unit columns.
@@ -213,8 +210,6 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                   onChange={handleFileChange}
                 />
                 <div>
-                  <p>Drop CSV file here</p>
-                  <p>Or browse files on your system</p>
                   {uploadedFileName ? (
                     <div className="upload-loaded">
                       <button
@@ -232,9 +227,14 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                         <p className="upload-loaded-size">{fileSizeLabel}</p>
                       ) : null}
                     </div>
-                  ) : null}
-                  <p className="upload-secondary">[Supported formats: CSV (Recommended), XLSX]</p>
-                  <p className="upload-secondary">[Max file size: 50MB]</p>
+                  ) : (
+                    <>
+                      <p>Drop CSV file here</p>
+                      <p>Or browse files on your system</p>
+                      <p className="upload-secondary">[Supported formats: CSV (Recommended), XLSX]</p>
+                      <p className="upload-secondary">[Max file size: 50MB]</p>
+                    </>
+                  )}
                 </div>
               </label>
               {statusMessage ? <p className="status-text">{statusMessage}</p> : null}

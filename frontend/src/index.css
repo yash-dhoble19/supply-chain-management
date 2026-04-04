@@ -811,9 +811,6 @@ body {
 
 .upload-loaded {
   margin-top: 16px;
-  background: #eef2ff;
-  border-radius: 12px;
-  padding: 12px 14px 10px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -835,11 +832,11 @@ body {
 
 .upload-clear {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: -6px;
+  right: -6px;
   border: none;
   background: transparent;
-  font-size: 1rem;
+  font-size: 1.25rem;
   font-weight: 700;
   cursor: pointer;
   color: #0f172a;
