@@ -811,6 +811,26 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                 ) : null}
               </div>
             </section>
+            <section className="forecast-section optional-section">
+              <div className="forecast-section-header">
+                <div>
+                  <h3>Enhance Your Forecast (Optional)</h3>
+                  <p className="forecast-section-subtitle">
+                    Do you have additional data for better insights?
+                  </p>
+                </div>
+              </div>
+              <div className="optional-list">
+                <label className="optional-item">
+                  <input type="checkbox" />
+                  <span>Product Details</span>
+                </label>
+                <label className="optional-item">
+                  <input type="checkbox" />
+                  <span>Store / Location Details</span>
+                </label>
+              </div>
+            </section>
           </div>
         </div>
       </main>

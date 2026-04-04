@@ -985,6 +985,30 @@ body {
   box-shadow: 0 8px 20px rgba(59, 130, 246, 0.35);
 }
 
+.optional-section {
+  background: #f9fafc;
+}
+
+.optional-list {
+  display: flex;
+  gap: 24px;
+  margin-top: 12px;
+}
+
+.optional-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.optional-item input {
+  width: 18px;
+  height: 18px;
+}
+
 .preview-meta {
   display: flex;
   gap: 12px;
