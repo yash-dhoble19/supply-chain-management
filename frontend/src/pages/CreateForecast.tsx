@@ -22,9 +22,10 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
         onNavigate={onNavigate}
       />
 
-      <main className="demand-main">
+      <main className="demand-main" style={{ marginTop: 12 }}>
         <Header
-          title="AI Demand Intelligence"
+          title="📈 Generate New Forecast"
+          subtitle="Configure Parameters to run high-fidelity AI prediction models"
           lastUpdated={lastUpdated}
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
@@ -40,13 +41,9 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
               <span className="demand-hero-icon-inner">{null}</span>
             </div>
             <div>
-              <h2>AI Demand Intelligence</h2>
-              <p>Last updated: Just now</p>
-              <div style={{ marginTop: 12, display: "flex", gap: 16 }}>
-                <span className="material-symbols-outlined">refresh</span>
-                <span className="material-symbols-outlined">notifications</span>
-                <span className="material-symbols-outlined">help_outline</span>
-              </div>
+              
+              
+                
             </div>
           </div>
 

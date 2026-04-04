@@ -185,7 +185,7 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
 
       <main className="demand-main">
         <Header
-          title="AI Demand Intelligence"
+          title="📈 AI Demand Intelligence"
           lastUpdated={lastUpdated}
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
