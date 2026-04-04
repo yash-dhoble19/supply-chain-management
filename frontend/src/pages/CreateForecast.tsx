@@ -764,25 +764,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
           showHelp
           showSearch={false}
         />
-
         <div className="demand-content">
-          <div className="demand-hero">
-            <div className="demand-hero-icon">
-              <span className="demand-hero-icon-inner">📈</span>
-            </div>
-            <div>
-              <p className="demand-welcome">Upload historical inputs</p>
-              <h2>Step into forecast creation</h2>
-              <p>Drop your CSV and let ChainMind guide you through column mapping and validation.</p>
-              <p className="demand-steps-title">Workflow overview:</p>
-              <ol className="demand-steps">
-                <li>Upload historical data</li>
-                <li>Map date, sales, product, store, and price columns</li>
-                <li>Preview before running AI models</li>
-              </ol>
-            </div>
-          </div>
-
           <div className="forecast-workspace">
             <section className="forecast-section">
               <div className="forecast-section-header">
