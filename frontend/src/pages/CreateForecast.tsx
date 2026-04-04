@@ -35,6 +35,127 @@ interface DataSummary {
   status: string;
 }
 
+interface ProductMappingState {
+  fileName: string | null;
+  headers: string[];
+  rows: CsvRow[];
+  status: string | null;
+  idColumn: string;
+  nameColumn: string;
+}
+
+interface StoreMappingState {
+  fileName: string | null;
+  headers: string[];
+  rows: CsvRow[];
+  status: string | null;
+  storeIdColumn: string;
+  cityColumn: string;
+  stateColumn: string;
+  countryColumn: string;
+}
+
+const initialProductMapping: ProductMappingState = {
+  fileName: null,
+  headers: [],
+  rows: [],
+  status: null,
+  idColumn: "",
+  nameColumn: "",
+};
+
+const initialStoreMapping: StoreMappingState = {
+  fileName: null,
+  headers: [],
+  rows: [],
+  status: null,
+  storeIdColumn: "",
+  cityColumn: "",
+  stateColumn: "",
+  countryColumn: "",
+};
+
+const detectProductColumns = (headers: string[]) => ({
+  idColumn: pickColumn(headers, ["product_id", "id", "sku", "product"]),
+  nameColumn: pickColumn(headers, ["product_name", "name", "title", "label"]),
+});
+
+const detectStoreColumns = (headers: string[]) => ({
+  storeIdColumn: pickColumn(headers, ["store_id", "store", "id", "branch"]),
+  cityColumn: pickColumn(headers, ["city", "town", "district", "metro"]),
+  stateColumn: pickColumn(headers, ["state", "region", "province", "state/region"]),
+  countryColumn: pickColumn(headers, ["country", "nation", "country_name"]),
+});
+
+const readMappingFile = (
+  file: File,
+  onCsv: (content: string) => void,
+  onError: (message: string) => void
+) => {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const reader = new FileReader();
+
+  reader.onerror = () => {
+    onError("Unable to read the selected file.");
+  };
+
+  if (extension === "xlsx" || extension === "xls") {
+    reader.onload = () => {
+      const arrayBuffer = reader.result;
+      if (!(arrayBuffer instanceof ArrayBuffer)) {
+        onError("Unable to parse the spreadsheet.");
+        return;
+      }
+
+      try {
+        const workbook = XLSX.read(arrayBuffer, { type: "array" });
+        if (!workbook.SheetNames.length) {
+          onError("Spreadsheet does not contain any sheets.");
+          return;
+        }
+
+        const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]]);
+        onCsv(csv);
+      } catch {
+        onError("Failed to convert the spreadsheet to CSV.");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    return;
+  }
+
+  reader.onload = () => {
+    const content = reader.result;
+    if (typeof content !== "string") {
+      onError("Unable to read the selected file.");
+      return;
+    }
+
+    onCsv(content);
+  };
+  reader.readAsText(file);
+};
+
+const processMappingFile = (
+  file: File,
+  onParsed: (headers: string[], rows: CsvRow[]) => void,
+  onError: (message: string) => void
+) => {
+  readMappingFile(
+    file,
+    (csvContent) => {
+      const parsed = parseCsvPreview(csvContent);
+      if (!parsed || !parsed.headers.length) {
+        onError("Unable to find tabular data inside the file.");
+        return;
+      }
+
+      onParsed(parsed.headers, parsed.rawRows);
+    },
+    onError
+  );
+};
+
 interface CreateForecastProps {
   activePage: AppPage;
   onNavigate: (page: AppPage) => void;
@@ -261,6 +382,12 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const [validationModal, setValidationModal] = useState<ValidationModalInfo | null>(null);
   const [dataSummary, setDataSummary] = useState<DataSummary | null>(null);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [productMapping, setProductMapping] = useState<ProductMappingState>(
+    initialProductMapping
+  );
+  const [storeMapping, setStoreMapping] = useState<StoreMappingState>(initialStoreMapping);
+  const [mappingErrors, setMappingErrors] = useState<string[] | null>(null);
+  const [mappingSuccess, setMappingSuccess] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [fileSizeLabel, setFileSizeLabel] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -378,12 +505,61 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
         duplicatesRemoved: Math.max(0, rawRows.length - cleaned.length),
         status: "Ready for forecasting",
       });
-      setPreviewExpanded(true);
+      setPreviewExpanded(false);
       setStatusMessage("Data cleaned successfully. Ready for forecasting.");
       setIsValidating(false);
     };
 
     setTimeout(runValidation, 400);
+  };
+
+  const handleConfirmMappingDetails = () => {
+    const errors: string[] = [];
+
+    if (!productMapping.fileName && !storeMapping.fileName) {
+      errors.push("Upload product or store data before confirming.");
+    }
+
+    if (productMapping.fileName) {
+      const missing: string[] = [];
+      if (!productMapping.idColumn) {
+        missing.push("Product ID column");
+      }
+      if (!productMapping.nameColumn) {
+        missing.push("Product Name column");
+      }
+      if (missing.length) {
+        errors.push(`Product Details missing: ${missing.join(", ")}`);
+      }
+    }
+
+    if (storeMapping.fileName) {
+      const missing: string[] = [];
+      if (!storeMapping.storeIdColumn) {
+        missing.push("Store ID column");
+      }
+      if (!storeMapping.cityColumn) {
+        missing.push("City column");
+      }
+      if (!storeMapping.stateColumn) {
+        missing.push("State/Region column");
+      }
+      if (!storeMapping.countryColumn) {
+        missing.push("Country column");
+      }
+      if (missing.length) {
+        errors.push(`Store Details missing: ${missing.join(", ")}`);
+      }
+    }
+
+    if (errors.length) {
+      setMappingErrors(errors);
+      setMappingSuccess(null);
+      return;
+    }
+
+    setMappingErrors(null);
+    setMappingSuccess("Now generate your forecast — all ready with input.");
   };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -503,6 +679,92 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       processCsv(content);
     };
     reader.readAsText(file);
+  };
+
+  const handleProductMappingChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setProductMapping(initialProductMapping);
+      return;
+    }
+
+    setProductMapping({
+      ...initialProductMapping,
+      fileName: file.name,
+      status: "Parsing product data...",
+    });
+
+    processMappingFile(
+      file,
+      (headers, rows) => {
+        const detection = detectProductColumns(headers);
+        setProductMapping({
+          fileName: file.name,
+          headers,
+          rows,
+          status: "Columns detected",
+          idColumn: detection.idColumn,
+          nameColumn: detection.nameColumn,
+        });
+        setMappingErrors(null);
+        setMappingSuccess(null);
+      },
+      (message) => {
+        setProductMapping({
+          fileName: file.name,
+          headers: [],
+          rows: [],
+          status: message,
+          idColumn: "",
+          nameColumn: "",
+        });
+      }
+    );
+  };
+
+  const handleStoreMappingChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setStoreMapping(initialStoreMapping);
+      return;
+    }
+
+    setStoreMapping({
+      ...initialStoreMapping,
+      fileName: file.name,
+      status: "Parsing store data...",
+    });
+
+    processMappingFile(
+      file,
+      (headers, rows) => {
+        const detection = detectStoreColumns(headers);
+        setStoreMapping({
+          fileName: file.name,
+          headers,
+          rows,
+          status: "Columns detected",
+          storeIdColumn: detection.storeIdColumn,
+          cityColumn: detection.cityColumn,
+          stateColumn: detection.stateColumn,
+          countryColumn: detection.countryColumn,
+        });
+        setMappingErrors(null);
+        setMappingSuccess(null);
+      },
+      (message) => {
+        setStoreMapping({
+          fileName: file.name,
+          headers: [],
+          rows: [],
+          status: message,
+          storeIdColumn: "",
+          cityColumn: "",
+          stateColumn: "",
+          countryColumn: "",
+        });
+      }
+    );
   };
 
   return (
@@ -753,7 +1015,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
             )}
 
             <section className="forecast-section preview-section">
-              <div className="forecast-section-header preview-header">
+              <div className="preview-header-row">
                 <div>
                   <h3>Data preview</h3>
                   <p className="forecast-section-subtitle">
@@ -772,14 +1034,14 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                     type="button"
                     className="preview-toggle"
                     onClick={togglePreview}
-                    aria-label={previewExpanded ? "Hide preview" : "Show preview"}
+                    aria-expanded={previewExpanded}
                   >
-                    {previewExpanded ? "↑" : "↓"}
+                    {previewExpanded ? "▲" : "▼"}
                   </button>
                 </div>
               </div>
               <div className={`preview-table ${previewExpanded ? "expanded" : "collapsed"}`}>
-                {previewExpanded ? (
+                {previewExpanded && (
                   columns.length ? (
                     <div className="preview-table-scroll">
                       <div className="preview-table-row preview-table-header">
@@ -808,28 +1070,253 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                       Start by uploading a CSV to unlock the preview.
                     </div>
                   )
-                ) : null}
+                )}
               </div>
             </section>
-            <section className="forecast-section optional-section">
+            <section className="forecast-section mapping-section">
               <div className="forecast-section-header">
                 <div>
                   <h3>Enhance Your Forecast (Optional)</h3>
                   <p className="forecast-section-subtitle">
-                    Do you have additional data for better insights?
+                    Add additional data for better insights.
                   </p>
                 </div>
               </div>
-              <div className="optional-list">
-                <label className="optional-item">
-                  <input type="checkbox" />
-                  <span>Product Details</span>
-                </label>
-                <label className="optional-item">
-                  <input type="checkbox" />
-                  <span>Store / Location Details</span>
-                </label>
+
+              <div className="mapping-item">
+                <div className="mapping-side-left">
+                  <h4 className="mapping-title">1. Upload Product Details</h4>
+                  <p className="mapping-subtitle">Enable product-level forecasting.</p>
+                  <div className="mapping-upload">
+                    <label className="upload-pill" htmlFor="product-mapping">
+                      Browse Data
+                    </label>
+                    <input
+                      id="product-mapping"
+                      type="file"
+                      accept=".csv,.xlsx,.xls"
+                      onChange={handleProductMappingChange}
+                    />
+                  </div>
+                  <p className="mapping-supported">[Supported formats: CSV (Recommended), Excel (.xlsx, .xls)],[Max file size: 50MB]</p>
+                  {productMapping.fileName ? (
+                    <p className="mapping-hint">Uploaded: {productMapping.fileName}</p>
+                  ) : null}
+                  {productMapping.status ? (
+                    <p className="mapping-hint">{productMapping.status}</p>
+                  ) : null}
+                </div>
+                <div className="mapping-side-right">
+                  {productMapping.headers.length ? (
+                    <>
+                      <h4>Column Mapping</h4>
+                      <div className="mapping-grid">
+                        <label className="mapping-column">
+                          <span>Product ID</span>
+                          <select
+                            value={productMapping.idColumn}
+                            onChange={(event) =>
+                              setProductMapping((prev) => ({
+                                ...prev,
+                                idColumn: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select column</option>
+                            {productMapping.headers.map((header) => (
+                              <option key={`prod-id-${header}`} value={header}>
+                                {header}
+                              </option>
+                            ))}
+                          </select>
+                          <small className="mapping-detected">
+                            Detected: {productMapping.idColumn || "Not Available"}
+                          </small>
+                        </label>
+                        <label className="mapping-column">
+                          <span>Product Name</span>
+                          <select
+                            value={productMapping.nameColumn}
+                            onChange={(event) =>
+                              setProductMapping((prev) => ({
+                                ...prev,
+                                nameColumn: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select column</option>
+                            {productMapping.headers.map((header) => (
+                              <option key={`prod-name-${header}`} value={header}>
+                                {header}
+                              </option>
+                            ))}
+                          </select>
+                          <small className="mapping-detected">
+                            Detected: {productMapping.nameColumn || "Not Available"}
+                          </small>
+                        </label>
+                      </div>
+                      {productMapping.status ? (
+                        <p className="mapping-hint">{productMapping.status}</p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="mapping-empty">Upload a file to configure product columns.</p>
+                  )}
+                </div>
               </div>
+
+              <div className="mapping-item">
+                <div className="mapping-side-left">
+                  <h4 className="mapping-title">2. Upload Store Details</h4>
+                  <p className="mapping-subtitle">Enable Store-level forecasting.</p>
+                  <div className="mapping-upload">
+                    <label className="upload-pill" htmlFor="store-mapping">
+                      Browse Data
+                    </label>
+                    <input
+                      id="store-mapping"
+                      type="file"
+                      accept=".csv,.xlsx,.xls"
+                      onChange={handleStoreMappingChange}
+                    />
+                  </div>
+                  <p className="mapping-supported">[Supported formats: CSV (Recommended), Excel (.xlsx, .xls)],[Max file size: 50MB]</p>
+                  {storeMapping.fileName ? (
+                    <p className="mapping-hint">Uploaded: {storeMapping.fileName}</p>
+                  ) : null}
+                  {storeMapping.status ? (
+                    <p className="mapping-hint">{storeMapping.status}</p>
+                  ) : null}
+                </div>
+                <div className="mapping-side-right">
+                  {storeMapping.headers.length ? (
+                    <>
+                      <h4>Column Mapping</h4>
+                      <div className="mapping-grid">
+                        <label className="mapping-column">
+                          <span>Store ID</span>
+                          <select
+                            value={storeMapping.storeIdColumn}
+                            onChange={(event) =>
+                              setStoreMapping((prev) => ({
+                                ...prev,
+                                storeIdColumn: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select column</option>
+                            {storeMapping.headers.map((header) => (
+                              <option key={`store-id-${header}`} value={header}>
+                                {header}
+                              </option>
+                            ))}
+                          </select>
+                          <small className="mapping-detected">
+                            Detected: {storeMapping.storeIdColumn || "Not Available"}
+                          </small>
+                        </label>
+                        <label className="mapping-column">
+                          <span>City</span>
+                          <select
+                            value={storeMapping.cityColumn}
+                            onChange={(event) =>
+                              setStoreMapping((prev) => ({
+                                ...prev,
+                                cityColumn: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select column</option>
+                            {storeMapping.headers.map((header) => (
+                              <option key={`store-city-${header}`} value={header}>
+                                {header}
+                              </option>
+                            ))}
+                          </select>
+                          <small className="mapping-detected">
+                            Detected: {storeMapping.cityColumn || "Not Available"}
+                          </small>
+                        </label>
+                        <label className="mapping-column">
+                          <span>State/Region</span>
+                          <select
+                            value={storeMapping.stateColumn}
+                            onChange={(event) =>
+                              setStoreMapping((prev) => ({
+                                ...prev,
+                                stateColumn: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select column</option>
+                            {storeMapping.headers.map((header) => (
+                              <option key={`store-state-${header}`} value={header}>
+                                {header}
+                              </option>
+                            ))}
+                          </select>
+                          <small className="mapping-detected">
+                            Detected: {storeMapping.stateColumn || "Not Available"}
+                          </small>
+                        </label>
+                        <label className="mapping-column">
+                          <span>Country</span>
+                          <select
+                            value={storeMapping.countryColumn}
+                            onChange={(event) =>
+                              setStoreMapping((prev) => ({
+                                ...prev,
+                                countryColumn: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select column</option>
+                            {storeMapping.headers.map((header) => (
+                              <option key={`store-country-${header}`} value={header}>
+                                {header}
+                              </option>
+                            ))}
+                          </select>
+                          <small className="mapping-detected">
+                            Detected: {storeMapping.countryColumn || "Not Available"}
+                          </small>
+                        </label>
+                      </div>
+                      <p className="mapping-status">
+                      </p>
+                      {storeMapping.status ? (
+                        <p className="mapping-hint">{storeMapping.status}</p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="mapping-empty">Upload a file to configure store columns.</p>
+                  )}
+                </div>
+              </div>
+
+              {mappingErrors ? (
+                <div className="mapping-alert">
+                  <ul>
+                    {mappingErrors.map((error) => (
+                      <li key={error}>• {error}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {mappingSuccess ? (
+                <p className="mapping-success">{mappingSuccess}</p>
+              ) : null}
+
+              <button
+                type="button"
+                className="confirm-mapping demand-cta"
+                onClick={handleConfirmMappingDetails}
+                disabled={!productMapping.fileName && !storeMapping.fileName}
+              >
+                Confirm Mapping
+              </button>
             </section>
           </div>
         </div>
