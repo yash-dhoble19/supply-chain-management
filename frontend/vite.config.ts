@@ -3,13 +3,12 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  resolve: {
-    // Use the official ESM entry so Vite can bundle xlsx correctly
-    alias: {
-      xlsx: "xlsx/xlsx.mjs",
-    },
+  optimizeDeps: {
+    include: ["xlsx"],
   },
-  server: {
-    port: 5173,
+  resolve: {
+    alias: {
+      fs: "rollup-plugin-node-polyfills/polyfills/empty",
+    },
   },
 });

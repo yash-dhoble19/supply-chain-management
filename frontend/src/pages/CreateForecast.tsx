@@ -3,7 +3,7 @@ import type { ChangeEvent, DragEvent, MouseEvent } from "react";
 import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
 import type { AppPage } from "../types/app.types";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 
 type CsvRow = Record<string, string>;
 
@@ -106,27 +106,34 @@ const readMappingFile = (
   };
 
   if (extension === "xlsx" || extension === "xls") {
-    reader.onload = () => {
-      const arrayBuffer = reader.result;
-      if (!(arrayBuffer instanceof ArrayBuffer)) {
+    reader.onload = (event) => {
+      const data = event.target?.result;
+      if (typeof data !== "string") {
         onError("Unable to parse the spreadsheet.");
         return;
       }
 
       try {
-        const workbook = XLSX.read(arrayBuffer, { type: "array" });
+        const workbook = XLSX.read(data, { type: "binary" });
         if (!workbook.SheetNames.length) {
           onError("Spreadsheet does not contain any sheets.");
           return;
         }
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
 
-        const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]]);
+        if (!worksheet) {
+          onError("Spreadsheet does not contain any sheets.");
+          return;
+        }
+
+        const csv = XLSX.utils.sheet_to_csv(worksheet);
         onCsv(csv);
       } catch {
         onError("Failed to convert the spreadsheet to CSV.");
       }
     };
-    reader.readAsArrayBuffer(file);
+    reader.readAsBinaryString(file);
     return;
   }
 
