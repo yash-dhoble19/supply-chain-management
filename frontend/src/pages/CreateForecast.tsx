@@ -985,13 +985,15 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                           [Supported formats: CSV (Recommended), Excel (.xlsx, .xls)]
                         </p>
                         <p className="upload-secondary">[Max file size: 50MB]</p>
-                        <button
-                          type="button"
-                          className="confirm-mapping demand-cta browse-again"
-                          onClick={handleBrowseAgain}
-                        >
-                          Browse Again
-                        </button>
+                        <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+                          <button
+                            type="button"
+                            className="confirm-mapping demand-cta browse-again"
+                            onClick={handleBrowseAgain}
+                          >
+                            Browse Again
+                          </button>
+                        </div>
                       </>
                     ) : (
                       <>
