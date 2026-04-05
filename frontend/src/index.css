@@ -730,6 +730,37 @@ body {
   line-height: 1.5;
 }
 
+.demand-feature-link {
+  background: transparent;
+  border: none;
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.2s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.demand-feature-link span {
+  transition: transform 0.2s ease;
+}
+
+.demand-feature-link:hover,
+.demand-feature-link:focus-visible {
+  color: #1d4ed8;
+}
+
+.demand-feature-link:hover span,
+.demand-feature-link:focus-visible span {
+  transform: translateX(3px);
+}
+
 .forecast-workspace {
   width: calc(100% - 24px);
   max-width: 1200px;

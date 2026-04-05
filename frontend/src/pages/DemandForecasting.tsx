@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
 import type { AppPage } from "../types/app.types";
-import type { KeyboardEvent } from "react";
+import type { CSSProperties, KeyboardEvent } from "react";
 
 const icons = {
   logo: (
@@ -133,6 +133,26 @@ const features = [
   },
 ];
 
+const sampleButtonWrapperStyles: CSSProperties = {
+  display: "flex",
+  justifyContent: "center",
+  marginBottom: 26,
+};
+
+const sampleButtonStyles: CSSProperties = {
+  border: "1px solid rgba(59, 130, 246, 0.4)",
+  background: "transparent",
+  color: "#2563eb",
+  borderRadius: 10,
+  padding: "16px 42px",
+  fontSize: 15,
+  fontWeight: 600,
+  cursor: "pointer",
+  transition: "all 0.2s",
+  fontFamily: "inherit",
+  boxShadow: "none",
+};
+
 interface DemandForecastingProps {
   activePage: AppPage;
   onNavigate: (page: AppPage) => void;
@@ -220,6 +240,15 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
           >
             🚀 Create Demand Forecast
           </button>
+          <div style={sampleButtonWrapperStyles}>
+            <button
+              style={sampleButtonStyles}
+              type="button"
+              onClick={() => onNavigate("createForecast")}
+            >
+              Try Sample Forecast
+            </button>
+          </div>
 
           <div className="demand-feature-grid">
             {features.map((f) => {
@@ -237,11 +266,19 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
                   <div className="demand-feature-icon" style={{ background: f.iconBg }}>
                     {f.icon}
                   </div>
-                  <div className="demand-feature-label">{f.label}</div>
-                  <p className="demand-feature-desc">{f.desc}</p>
-                </div>
-              );
-            })}
+              <div className="demand-feature-label">{f.label}</div>
+              <p className="demand-feature-desc">{f.desc}</p>
+              <button
+                type="button"
+                className="demand-feature-link"
+                onClick={() => openFeatureModal(f.label)}
+              >
+                Learn more
+                <span aria-hidden="true">→</span>
+              </button>
+            </div>
+          );
+        })}
           </div>
 
           <div className="demand-conclusion">
