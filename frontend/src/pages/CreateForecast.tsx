@@ -93,60 +93,97 @@ const detectStoreColumns = (headers: string[]) => ({
   countryColumn: pickColumn(headers, ["country", "nation", "country_name"]),
 });
 
-const readMappingFile = (
-  file: File,
-  onCsv: (content: string) => void,
-  onError: (message: string) => void
-) => {
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+const convertWorkbookToCsv = (workbook: XLSX.WorkBook) => {
+  const csvChunks: string[] = [];
+  let headerLine: string | null = null;
+
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) {
+      continue;
+    }
+
+    const sheetCsv = XLSX.utils.sheet_to_csv(worksheet, { blankrows: false });
+    if (!sheetCsv.trim()) {
+      continue;
+    }
+
+    const lines = sheetCsv.split(/\r?\n/);
+    const filtered = lines.filter((line) => line.trim().length > 0);
+    if (!filtered.length) {
+      continue;
+    }
+
+    if (!headerLine) {
+      csvChunks.push(filtered.join("\n"));
+      headerLine = filtered[0];
+      continue;
+    }
+
+    const sheetRows = filtered.slice(1);
+    if (sheetRows.length) {
+      csvChunks.push(sheetRows.join("\n"));
+    }
+  }
+
+  return csvChunks.join("\n");
+};
+
+const loadFileAsCsv = (file: File): Promise<string> => {
   const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const reader = new FileReader();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
 
-  reader.onerror = () => {
-    onError("Unable to read the selected file.");
-  };
+    reader.onerror = () => {
+      reject("Unable to read the selected file.");
+    };
 
-  if (extension === "xlsx" || extension === "xls") {
-    reader.onload = (event) => {
-      const data = event.target?.result;
-      if (typeof data !== "string") {
-        onError("Unable to parse the spreadsheet.");
+    reader.onload = () => {
+      const result = reader.result;
+
+      if (extension === "csv") {
+        if (typeof result !== "string") {
+          reject("Unable to read the selected file.");
+          return;
+        }
+
+        resolve(result);
+        return;
+      }
+
+      if (!(result instanceof ArrayBuffer)) {
+        reject("Unable to parse the spreadsheet.");
         return;
       }
 
       try {
-        const workbook = XLSX.read(data, { type: "binary" });
+        const workbook = XLSX.read(result, { type: "array" });
         if (!workbook.SheetNames.length) {
-          onError("Spreadsheet does not contain any sheets.");
-          return;
-        }
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-
-        if (!worksheet) {
-          onError("Spreadsheet does not contain any sheets.");
+          reject("Spreadsheet does not contain any sheets.");
           return;
         }
 
-        const csv = XLSX.utils.sheet_to_csv(worksheet);
-        onCsv(csv);
+        const csv = convertWorkbookToCsv(workbook);
+        if (!csv.trim()) {
+          reject("Spreadsheet does not contain any tabular data.");
+          return;
+        }
+
+        resolve(csv);
       } catch {
-        onError("Failed to convert the spreadsheet to CSV.");
+        reject("Failed to convert the spreadsheet to CSV.");
       }
     };
-    reader.readAsBinaryString(file);
-    return;
-  }
 
-  reader.onload = () => {
-    const content = reader.result;
-    if (typeof content !== "string") {
-      onError("Unable to read the selected file.");
+    if (extension === "csv") {
+      reader.readAsText(file);
       return;
     }
 
-    onCsv(content);
-  };
-  reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
+  });
 };
 
 const processMappingFile = (
@@ -154,9 +191,13 @@ const processMappingFile = (
   onParsed: (headers: string[], rows: CsvRow[]) => void,
   onError: (message: string) => void
 ) => {
-  readMappingFile(
-    file,
-    (csvContent) => {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    onError("File size exceeds 50 MB. Please upload a smaller file.");
+    return;
+  }
+
+  loadFileAsCsv(file)
+    .then((csvContent) => {
       const parsed = parseCsvPreview(csvContent);
       if (!parsed || !parsed.headers.length) {
         onError("Unable to find tabular data inside the file.");
@@ -164,9 +205,8 @@ const processMappingFile = (
       }
 
       onParsed(parsed.headers, parsed.rawRows);
-    },
-    onError
-  );
+    })
+    .catch(onError);
 };
 
 interface CreateForecastProps {
@@ -472,6 +512,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const [fileSizeLabel, setFileSizeLabel] = useState<string | null>(null);
   const [workflowUnlocked, setWorkflowUnlocked] = useState(false);
   const [isDropzoneActive, setIsDropzoneActive] = useState(false);
+  const [unsupportedFileAttempted, setUnsupportedFileAttempted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const togglePreview = () => {
@@ -513,6 +554,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     }
     setWorkflowUnlocked(false);
     setIsDropzoneActive(false);
+    setUnsupportedFileAttempted(false);
   };
 
   const handleDropzoneClick = (event: MouseEvent<HTMLLabelElement>) => {
@@ -521,10 +563,27 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     }
   };
 
+  const handleBrowseAgain = (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  };
+
   const processForecastFile = (file: File) => {
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
     if (!supportedForecastExtensions.has(extension)) {
-      setStatusMessage("Upload a CSV or Excel file (.csv, .xlsx, .xls).");
+      setStatusMessage(null);
+      setUnsupportedFileAttempted(true);
+      return;
+    }
+
+    setUnsupportedFileAttempted(false);
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setStatusMessage("File size exceeds 50 MB. Please upload a smaller file.");
       return;
     }
 
@@ -589,46 +648,9 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       setWorkflowUnlocked(false);
     };
 
-    const reader = new FileReader();
-    reader.onerror = () => {
-      setStatusMessage("Unable to read the selected file.");
-    };
-
-    if (extension === "xlsx" || extension === "xls") {
-      reader.onload = () => {
-        const arrayBuffer = reader.result;
-        if (!(arrayBuffer instanceof ArrayBuffer)) {
-          setStatusMessage("Unable to parse the spreadsheet.");
-          return;
-        }
-
-        try {
-          const workbook = XLSX.read(arrayBuffer, { type: "array" });
-          if (!workbook.SheetNames.length) {
-            setStatusMessage("Spreadsheet does not contain any sheets.");
-            return;
-          }
-
-          const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]]);
-          processCsv(csv);
-        } catch {
-          setStatusMessage("Failed to convert the spreadsheet to CSV.");
-        }
-      };
-      reader.readAsArrayBuffer(file);
-      return;
-    }
-
-    reader.onload = () => {
-      const content = reader.result;
-      if (typeof content !== "string") {
-        setStatusMessage("Unable to read the selected file.");
-        return;
-      }
-
-      processCsv(content);
-    };
-    reader.readAsText(file);
+    loadFileAsCsv(file)
+      .then(processCsv)
+      .catch((message) => setStatusMessage(message));
   };
 
   const handleDropzoneDragEnter = (event: DragEvent<HTMLLabelElement>) => {
@@ -662,10 +684,17 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       return;
     }
 
-    const file = event.dataTransfer.files?.[0];
-    if (file) {
-      processForecastFile(file);
+    const files = event.dataTransfer?.files;
+    if (!files?.length) {
+      return;
     }
+
+    if (files.length > 1) {
+      setStatusMessage("Please drop only one file at a time.");
+      return;
+    }
+
+    processForecastFile(files[0]);
   };
 
   const handleConfirmMapping = () => {
@@ -949,12 +978,31 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                       ) : null}
                     </div>
                   ) : (
-                    <>
-                      <p>Drop CSV file here</p>
-                      <p>Or browse files on your system</p>
-                      <p className="upload-secondary">[Supported formats: CSV (Recommended), Excel (.xlsx, .xls)]</p>
-                      <p className="upload-secondary">[Max file size: 50MB]</p>
-                    </>
+                    unsupportedFileAttempted ? (
+                      <>
+                        <p>Unsupported file format</p>
+                        <p className="upload-secondary">
+                          [Supported formats: CSV (Recommended), Excel (.xlsx, .xls)]
+                        </p>
+                        <p className="upload-secondary">[Max file size: 50MB]</p>
+                        <button
+                          type="button"
+                          className="confirm-mapping demand-cta browse-again"
+                          onClick={handleBrowseAgain}
+                        >
+                          Browse Again
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p>Drop CSV file here</p>
+                        <p>Or browse files on your system</p>
+                        <p className="upload-secondary">
+                          [Supported formats: CSV (Recommended), Excel (.xlsx, .xls)]
+                        </p>
+                        <p className="upload-secondary">[Max file size: 50MB]</p>
+                      </>
+                    )
                   )}
                 </div>
               </label>
