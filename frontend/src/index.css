@@ -830,6 +830,12 @@ body {
   background: linear-gradient(180deg, #f0f4ff, #ffffff);
 }
 
+.upload-dropzone.drag-active {
+  border-color: #2563eb;
+  background: linear-gradient(180deg, #dbeafe, #ffffff);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
 .upload-dropzone input {
   display: none;
 }
@@ -856,6 +862,12 @@ body {
   font-size: 0.85rem;
   color: #64748b;
   font-weight: 500;
+}
+
+.upload-continue-row {
+  margin-top: 1rem;
+  display: flex;
+  justify-content: center;
 }
 
 .upload-loaded {

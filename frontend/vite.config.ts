@@ -1,14 +1,13 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const alias = {
-  xlsx: "xlsx/dist/xlsx.full.mjs",
-};
-
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias,
+    // Use the official ESM entry so Vite can bundle xlsx correctly
+    alias: {
+      xlsx: "xlsx/xlsx.mjs",
+    },
   },
   server: {
     port: 5173,

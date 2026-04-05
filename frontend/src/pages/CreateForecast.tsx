@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import type { ChangeEvent, MouseEvent } from "react";
+import type { ChangeEvent, DragEvent, MouseEvent } from "react";
 import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
 import type { AppPage } from "../types/app.types";
@@ -370,6 +370,7 @@ const formatFileSize = (size: number) => {
 };
 
 const formatNumber = (value: number) => value.toLocaleString();
+const supportedForecastExtensions = new Set(["csv", "xlsx", "xls"]);
 
 const countUniqueValues = (rows: CsvRow[], column?: string) => {
   if (!column) {
@@ -462,6 +463,8 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const [enhanceConfirmed, setEnhanceConfirmed] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [fileSizeLabel, setFileSizeLabel] = useState<string | null>(null);
+  const [workflowUnlocked, setWorkflowUnlocked] = useState(false);
+  const [isDropzoneActive, setIsDropzoneActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const togglePreview = () => {
@@ -471,15 +474,15 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const previewRows = rawRows.slice(0, 5);
   const hasParsedData = Boolean(columns.length && rawRows.length);
 
-const buildCurrentMapping = (): DataMapping => ({
-  dateColumn,
-  salesColumn,
-  productColumn,
-  storeColumn,
-  priceColumn,
-});
+  const buildCurrentMapping = (): DataMapping => ({
+    dateColumn,
+    salesColumn,
+    productColumn,
+    storeColumn,
+    priceColumn,
+  });
 
-const clearUploadedFile = () => {
+  const clearUploadedFile = () => {
     setUploadedFileName(null);
     setFileSizeLabel(null);
     setColumns([]);
@@ -501,11 +504,160 @@ const clearUploadedFile = () => {
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+    setWorkflowUnlocked(false);
+    setIsDropzoneActive(false);
   };
 
   const handleDropzoneClick = (event: MouseEvent<HTMLLabelElement>) => {
     if (uploadedFileName) {
       event.preventDefault();
+    }
+  };
+
+  const processForecastFile = (file: File) => {
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (!supportedForecastExtensions.has(extension)) {
+      setStatusMessage("Upload a CSV or Excel file (.csv, .xlsx, .xls).");
+      return;
+    }
+
+    const processCsv = (content: string) => {
+      const parsed = parseCsvPreview(content, 6);
+      if (!parsed) {
+        setStatusMessage("The file looks empty. Upload a CSV with headers and rows.");
+        return;
+      }
+
+      const detectedDateColumn = pickColumn(parsed.headers, [
+        "date",
+        "month",
+        "day",
+        "time",
+        "period",
+      ]);
+      const detectedSalesColumn = pickColumn(parsed.headers, [
+        "sales",
+        "units",
+        "quantity",
+        "qty",
+        "volume",
+        "demand",
+        "revenue",
+        "amount",
+      ]);
+      const detectedProductColumn = pickColumn(parsed.headers, [
+        "product",
+        "item",
+        "sku",
+        "category",
+        "name",
+      ]);
+      const detectedStoreColumn = pickColumn(parsed.headers, [
+        "store",
+        "location",
+        "branch",
+        "outlet",
+      ]);
+      const detectedPriceColumn = pickColumn(parsed.headers, [
+        "price",
+        "cost",
+        "unit price",
+        "rate",
+        "value",
+      ]);
+
+      setColumns(parsed.headers);
+      setRawRows(parsed.rawRows);
+      setDateColumn(detectedDateColumn);
+      setSalesColumn(detectedSalesColumn);
+      setProductColumn(detectedProductColumn);
+      setStoreColumn(detectedStoreColumn);
+      setPriceColumn(detectedPriceColumn);
+      setUploadedFileName(file.name);
+      setFileSizeLabel(formatFileSize(file.size));
+      setCleanedRows([]);
+      setDataSummary(null);
+      setValidationModal(null);
+      setStatusMessage("Parsed the uploaded data. Please confirm column mapping below.");
+      setWorkflowUnlocked(false);
+    };
+
+    const reader = new FileReader();
+    reader.onerror = () => {
+      setStatusMessage("Unable to read the selected file.");
+    };
+
+    if (extension === "xlsx" || extension === "xls") {
+      reader.onload = () => {
+        const arrayBuffer = reader.result;
+        if (!(arrayBuffer instanceof ArrayBuffer)) {
+          setStatusMessage("Unable to parse the spreadsheet.");
+          return;
+        }
+
+        try {
+          const workbook = XLSX.read(arrayBuffer, { type: "array" });
+          if (!workbook.SheetNames.length) {
+            setStatusMessage("Spreadsheet does not contain any sheets.");
+            return;
+          }
+
+          const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]]);
+          processCsv(csv);
+        } catch {
+          setStatusMessage("Failed to convert the spreadsheet to CSV.");
+        }
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+
+    reader.onload = () => {
+      const content = reader.result;
+      if (typeof content !== "string") {
+        setStatusMessage("Unable to read the selected file.");
+        return;
+      }
+
+      processCsv(content);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleDropzoneDragEnter = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    if (!uploadedFileName) {
+      setIsDropzoneActive(true);
+    }
+  };
+
+  const handleDropzoneDragOver = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = uploadedFileName ? "none" : "copy";
+    if (!uploadedFileName) {
+      setIsDropzoneActive(true);
+    }
+  };
+
+  const handleDropzoneDragLeave = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+      return;
+    }
+    setIsDropzoneActive(false);
+  };
+
+  const handleDropzoneDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDropzoneActive(false);
+    if (uploadedFileName) {
+      return;
+    }
+
+    const file = event.dataTransfer.files?.[0];
+    if (file) {
+      processForecastFile(file);
     }
   };
 
@@ -618,117 +770,7 @@ const clearUploadedFile = () => {
       clearUploadedFile();
       return;
     }
-
-    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-
-    const processCsv = (content: string) => {
-      const parsed = parseCsvPreview(content, 6);
-      if (!parsed) {
-        setStatusMessage("The file looks empty. Upload a CSV with headers and rows.");
-        return;
-      }
-
-      const detectedDateColumn = pickColumn(parsed.headers, [
-        "date",
-        "month",
-        "day",
-        "time",
-        "period",
-      ]);
-      const detectedSalesColumn = pickColumn(parsed.headers, [
-        "sales",
-        "units",
-        "quantity",
-        "qty",
-        "volume",
-        "demand",
-        "revenue",
-        "amount",
-      ]);
-      const detectedProductColumn = pickColumn(parsed.headers, [
-        "product",
-        "item",
-        "sku",
-        "category",
-        "name",
-      ]);
-      const detectedStoreColumn = pickColumn(parsed.headers, [
-        "store",
-        "location",
-        "branch",
-        "outlet",
-      ]);
-      const detectedPriceColumn = pickColumn(parsed.headers, [
-        "price",
-        "cost",
-        "unit price",
-        "rate",
-        "value",
-      ]);
-
-      const detectedMapping: DataMapping = {
-        dateColumn: detectedDateColumn,
-        salesColumn: detectedSalesColumn,
-        productColumn: detectedProductColumn,
-        storeColumn: detectedStoreColumn,
-        priceColumn: detectedPriceColumn,
-      };
-
-      setColumns(parsed.headers);
-      setRawRows(parsed.rawRows);
-      setDateColumn(detectedDateColumn);
-      setSalesColumn(detectedSalesColumn);
-      setProductColumn(detectedProductColumn);
-      setStoreColumn(detectedStoreColumn);
-      setPriceColumn(detectedPriceColumn);
-      setUploadedFileName(file.name);
-      setFileSizeLabel(formatFileSize(file.size));
-      setCleanedRows([]);
-      setDataSummary(null);
-      setValidationModal(null);
-      setStatusMessage("Parsed the uploaded data. Please confirm column mapping below.");
-    };
-
-    const reader = new FileReader();
-    reader.onerror = () => {
-      setStatusMessage("Unable to read the selected file.");
-    };
-
-    if (extension === "xlsx" || extension === "xls") {
-      reader.onload = () => {
-        const arrayBuffer = reader.result;
-        if (!(arrayBuffer instanceof ArrayBuffer)) {
-          setStatusMessage("Unable to parse the spreadsheet.");
-          return;
-        }
-
-        try {
-          const workbook = XLSX.read(arrayBuffer, { type: "array" });
-          if (!workbook.SheetNames.length) {
-            setStatusMessage("Spreadsheet does not contain any sheets.");
-            return;
-          }
-
-          const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[workbook.SheetNames[0]]);
-          processCsv(csv);
-        } catch {
-          setStatusMessage("Failed to convert the spreadsheet to CSV.");
-        }
-      };
-      reader.readAsArrayBuffer(file);
-      return;
-    }
-
-    reader.onload = () => {
-      const content = reader.result;
-      if (typeof content !== "string") {
-        setStatusMessage("Unable to read the selected file.");
-        return;
-      }
-
-      processCsv(content);
-    };
-    reader.readAsText(file);
+    processForecastFile(file);
   };
 
   const handleProductMappingChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -862,9 +904,13 @@ const clearUploadedFile = () => {
                 Drag or select your historical CSV/XLSX. We look for date, sales, product, store, and price columns.
               </p>
               <label
-                className={`upload-dropzone ${uploadedFileName ? "has-file" : ""}`}
+                className={`upload-dropzone ${uploadedFileName ? "has-file" : ""} ${isDropzoneActive ? "drag-active" : ""}`}
                 htmlFor="forecast-upload"
                 onClick={handleDropzoneClick}
+                onDragEnter={handleDropzoneDragEnter}
+                onDragOver={handleDropzoneDragOver}
+                onDragLeave={handleDropzoneDragLeave}
+                onDrop={handleDropzoneDrop}
               >
                 <input
                   id="forecast-upload"
@@ -906,9 +952,22 @@ const clearUploadedFile = () => {
                 </div>
               </label>
               {statusMessage ? <p className="status-text">{statusMessage}</p> : null}
+              {!workflowUnlocked && columns.length ? (
+                <div className="upload-continue-row">
+                  <button
+                    type="button"
+                    className="confirm-mapping demand-cta"
+                    onClick={() => setWorkflowUnlocked(true)}
+                  >
+                    Continue to workflow
+                  </button>
+                </div>
+              ) : null}
             </section>
 
-            {dataSummary ? (
+            {workflowUnlocked && (
+              <>
+                {dataSummary ? (
               <section className="forecast-section data-summary-card">
                 <div className="data-summary-title">
                   <h3>Data summary</h3>
@@ -1405,6 +1464,8 @@ const clearUploadedFile = () => {
                 </section>
               )
             ) : null}
+          </>
+        )}
           </div>
         </div>
       </main>

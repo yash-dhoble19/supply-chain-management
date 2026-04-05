@@ -115,7 +115,7 @@ const features = [
     iconBg: "#dbeafe",
     borderColor: "#3b82f6",
     label: "Intelligent Forecasting",
-    desc: "Leverages historical data, trends, and seasonality to generate reliable demand predictions.",
+    desc: "Turn historical data and current trends into accurate demand predictions using AI.",
   },
   {
     icon: icons.grid,
@@ -260,16 +260,16 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
                 >
                   ×
                 </button>
-                <h3>Intelligent Data-Driven Forecasting</h3>
+                <h3><strong>Intelligent Data-Driven Forecasting</strong></h3>
                 <p className="demand-modal-description">
-                  Our system analyzes historical sales, seasonality, trends, and external factors like weather and festivals to generate accurate predictions.
+                  We analyze sales trends, seasonality, and external factors like weather and events to generate reliable forecasts.
                 </p>
                 <div className="demand-modal-flow demand-modal-flow-steps">
-                  <span>Raw Data Input</span>
+                  <span>Raw Data</span>
                   <span className="demand-modal-flow-arrow">↓</span>
                   <span>Data Cleaning</span>
                   <span className="demand-modal-flow-arrow">↓</span>
-                  <span>Extracting Features</span>
+                  <span>Feature Extraction</span>
                   <span className="demand-modal-flow-arrow">↓</span>
                   <span>Data Segmentation</span>
                   <span className="demand-modal-flow-arrow">↓</span>
@@ -280,9 +280,9 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
                 <div className="demand-modal-capabilities">
                   <div className="demand-modal-cap-heading">Key Capabilities:</div>
                   <ul>
-                    <li>✔ Machine Learning Models (Random Forest, Gradient Boosting)</li>
-                    <li>✔ Baseline comparison using Moving Average</li>
-                    <li>✔ Segment-based forecasting (seasonal, stable, irregular demand)</li>
+                    <li>✔ AI models (Random Forest, Gradient Boosting)</li>
+                    <li>✔ Baseline comparison (Moving Average)</li>
+                    <li>✔ Smart segmentation (seasonal, stable, irregular demand)</li>
                     <li>✔ Continuous learning and model improvement</li>
                   </ul>
                 </div>
@@ -300,7 +300,7 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
                 >
                   ×
                 </button>
-                <h3>Gain complete visibility into demand patterns across multiple dimensions.</h3>
+                <h3><strong>Make better decisions by analyzing patterns across products, locations, and time.</strong></h3>
                 <p className="demand-modal-description">
                   Use these insights to optimize inventory, improve logistics planning, and make data-driven business decisions.
                 </p>
@@ -313,10 +313,10 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
                 <div className="demand-modal-capabilities">
                   <div className="demand-modal-cap-heading">Key Capabilities:</div>
                   <ul>
-                    <li>✔ Product-level demand forecasting</li>
-                    <li>✔ Location-wise insights (city, warehouse, region)</li>
+                    <li>✔ Product-level forecasts</li>
+                    <li>✔ Location insights (city, warehouse, region)</li>
                     <li>✔ Flexible time horizons (7, 30, 90 days)</li>
-                    <li>✔ Seasonal trends and demand patterns</li>
+                    <li>✔ Seasonal trend analysis</li>
                   </ul>
                 </div>
               </div>
@@ -333,7 +333,7 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
                 >
                   ×
                 </button>
-                <h3>Test business decisions before applying them in the real world.</h3>
+                <h3><strong>Test business decisions before applying them in the real world.</strong></h3>
                 <div className="demand-modal-flow demand-modal-flow-steps">
                   <span>Modify Inputs</span>
                   <span className="demand-modal-flow-arrow">↓</span>
@@ -363,7 +363,7 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
                 <div className="demand-modal-example">
                   <p>Example:</p>
                   <p className="demand-modal-example-quote">
-                    “What if price drops by 10%?” → Instantly see the expected change in demand.
+                    “Reduce price by 10%” → Instantly see demand impact"
                   </p>
                 </div>
               </div>
