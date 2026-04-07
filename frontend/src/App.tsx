@@ -36,6 +36,11 @@ const DemandForecasting = lazy(() =>
     default: module.DemandForecasting,
   })),
 );
+const AiTools = lazy(() =>
+  import("./pages/AiTools").then((module) => ({
+    default: module.AiTools,
+  })),
+);
 
 const pathByPage: Record<AppPage, string> = {
   dashboard: "/dashboard",
@@ -45,6 +50,7 @@ const pathByPage: Record<AppPage, string> = {
   purchaseOrders: "/purchase-orders",
   demandForecasting: "/demand-forecasting",
   createForecast: "/create-forecast",
+  aiTools: "/ai-tools",
 };
 
 function getPageFromPath(pathname: string): AppPage {
@@ -61,6 +67,8 @@ function getPageFromPath(pathname: string): AppPage {
       return "demandForecasting";
     case "/create-forecast":
       return "createForecast";
+    case "/ai-tools":
+      return "aiTools";
     case "/":
     case "/procurement":
     default:
@@ -117,6 +125,7 @@ function App() {
       {activePage === "procurement" ? (
         <ProcurementIntelligence activePage={activePage} onNavigate={navigate} />
       ) : null}
+      {activePage === "aiTools" ? <AiTools activePage={activePage} onNavigate={navigate} /> : null}
     </Suspense>
   );
 }

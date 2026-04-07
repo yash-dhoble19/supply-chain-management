@@ -25,9 +25,13 @@ Base = declarative_base()
 def initialize_database():
     import models
     from services.logistics_schema import sync_logistics_schema
+    from services.supplier_schema import sync_supplier_schema
+    from services.procurement_automation_schema import sync_procurement_automation_schema
 
     models.Base.metadata.create_all(bind=engine)
+    sync_supplier_schema(engine)
     sync_logistics_schema(engine)
+    sync_procurement_automation_schema(engine)
 
 # Dependency to get DB session in endpoints
 def get_db():

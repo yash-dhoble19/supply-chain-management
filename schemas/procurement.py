@@ -2,13 +2,39 @@ from pydantic import BaseModel
 from typing import Optional
 
 
-class SupplierCreate(BaseModel):
-    name: str
-    contact_email: str
-    category: str
-    reliability_score: float = 95.0
-    delivery_speed_days: int = 5
-    price_per_unit: float = 10.0
+class SupplierWrite(BaseModel):
+    supplier_name: str
+    email: str
+    company_name: Optional[str] = None
+    supplier_code: Optional[str] = None
+    contact_person: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+
+    product_name: Optional[str] = None
+    product_category: Optional[str] = None
+    unit_price: float = 0.0
+    currency: str = "USD"
+    delivery_cost: float = 0.0
+    average_delivery_days: int = 5
+    minimum_order_quantity: Optional[int] = None
+
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    postal_code: Optional[str] = None
+
+    supplier_type: str = "Strategic"
+    status: str = "ACTIVE"
+    preferred_supplier: bool = False
+    supplier_score: Optional[float] = None
+    reliability_percent: float = 95.0
+    on_time_delivery_percent: float = 93.5
+
+    gst_number: Optional[str] = None
+    tax_id: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class POCreate(BaseModel):

@@ -204,13 +204,28 @@ def seed_database():
     for supplier in SAMPLE_SUPPLIERS:
         try:
             response = requests.post(
-                f"{API_URL}/procurement/suppliers/create",
-                json=supplier
+                f"{API_URL}/api/procurement/suppliers",
+                json={
+                    "supplier_name": supplier["name"],
+                    "email": supplier["contact_email"],
+                    "company_name": supplier["name"],
+                    "product_category": supplier["category"],
+                    "unit_price": supplier["price_per_unit"],
+                    "average_delivery_days": supplier["delivery_speed_days"],
+                    "reliability_percent": supplier["reliability_score"],
+                    "on_time_delivery_percent": max(supplier["reliability_score"] - 2, 0),
+                    "currency": "USD",
+                    "delivery_cost": 0,
+                    "supplier_type": "Strategic",
+                    "status": "ACTIVE",
+                    "preferred_supplier": False
+                }
             )
             if response.status_code == 200:
                 result = response.json()
-                supplier_ids[supplier['name']] = result['supplier_id']
-                print(f"  ✅ Added: {supplier['name']} (Trust Score: {result['initial_trust_score']})")
+                supplier_record = result.get("supplier") or {}
+                supplier_ids[supplier['name']] = int(supplier_record.get("supplier_id", 0))
+                print(f"  ✅ Added: {supplier['name']} (Trust Score: {supplier_record.get('supplier_score', 'n/a')})")
             else:
                 print(f"  ⚠️ Skipped: {supplier['name']} (Already exists or error)")
         except Exception as e:

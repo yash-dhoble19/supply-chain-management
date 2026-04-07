@@ -5,4 +5,5 @@ export type AppPage =
   | "procurement"
   | "purchaseOrders"
   | "demandForecasting"
-  | "createForecast";
+  | "createForecast"
+  | "aiTools";

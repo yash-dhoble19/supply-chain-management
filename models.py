@@ -137,18 +137,76 @@ class Supplier(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    supplier_code = Column(String, unique=True, index=True, nullable=True)
+    company_name = Column(String, nullable=True)
+    contact_person = Column(String, nullable=True)
     contact_email = Column(String, nullable=False)
+    phone = Column(String, nullable=True)
+    website = Column(String, nullable=True)
 
     # --- Updated Fields for Dashboard Compatibility ---
     category = Column(String, default="General")
-    reliability_score = Column(Float, default=95.0)  # 1–10 scale
+    product_name = Column(String, nullable=True)
+    product_category = Column(String, nullable=True)
+    reliability_score = Column(Float, default=95.0)  # Legacy compatibility
+    reliability_percent = Column(Float, nullable=True)
+    on_time_delivery_percent = Column(Float, nullable=True)
+    supplier_score = Column(Float, nullable=True)
     delivery_speed_days = Column(Integer, default=5)
+    average_delivery_days = Column(Integer, nullable=True)
     lead_time_days = Column(Integer, default=5) # Alias for compatibility
     price_per_unit = Column(Float, default=0.0) # Added for quick cost calc
+    unit_price = Column(Float, nullable=True)
+    currency = Column(String, default="USD")
     delivery_cost = Column(Float, default=0.0)
+    minimum_order_quantity = Column(Integer, nullable=True)
+
+    supplier_type = Column(String, default="Strategic")
+    status = Column(String, default="ACTIVE")
+    preferred_supplier = Column(Boolean, default=False)
+
+    address = Column(Text, nullable=True)
+    city = Column(String, nullable=True)
+    state = Column(String, nullable=True)
+    country = Column(String, nullable=True)
+    postal_code = Column(String, nullable=True)
+
+    gst_number = Column(String, nullable=True)
+    tax_id = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+
+    # --- Procurement Automation Fields ---
+    source = Column(String, default="INTERNAL")  # INTERNAL, ALIBABA, TRADEKEY, GOOGLE_MAPS, MANUAL
+    source_url = Column(String, nullable=True)
+    source_scraped_at = Column(DateTime(timezone=True), nullable=True)
+    responsiveness_flag = Column(String, default="NORMAL")  # NORMAL, SLOW, LOW, UNRESPONSIVE
+    last_contacted_at = Column(DateTime(timezone=True), nullable=True)
+    last_response_time_hours = Column(Float, nullable=True)
+    total_inquiries_sent = Column(Integer, default=0)
+    total_replies_received = Column(Integer, default=0)
+
+    # --- n8n Workflow Compatibility Fields ---
+    supplier_id = Column(Integer, nullable=True)  # Mirrors 'id' for n8n queries
+    contact_name = Column(String, nullable=True)  # n8n reads this (alias for contact_person)
+    last_reply_at = Column(DateTime(timezone=True), nullable=True)
+    latest_quote_price = Column(Float, nullable=True)
+    latest_quote_delivery = Column(String, nullable=True)
+    responsiveness_status = Column(String, default="normal")
+    last_escalation_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     purchase_orders = relationship(
         "PurchaseOrder",
+        back_populates="supplier"
+    )
+    email_interactions = relationship(
+        "EmailInteraction",
+        back_populates="supplier"
+    )
+    quotes = relationship(
+        "SupplierQuote",
         back_populates="supplier"
     )
 
@@ -335,3 +393,132 @@ class AIInsight(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+# =====================================================
+# 11. PROCUREMENT SESSIONS (Sourcing Workflows)
+# =====================================================
+class ProcurementSession(Base):
+    __tablename__ = 'procurement_sessions'
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_code = Column(String, unique=True, index=True, nullable=False)
+    product_name = Column(String, nullable=False)
+    product_category = Column(String, nullable=True)
+    search_query = Column(Text, nullable=True)
+    source_types = Column(String, nullable=True)
+    status = Column(String, default='ACTIVE')
+
+    total_suppliers_found = Column(Integer, default=0)
+    total_inquiries_sent = Column(Integer, default=0)
+    total_replies = Column(Integer, default=0)
+    total_quotes = Column(Integer, default=0)
+    approved_supplier_id = Column(Integer, ForeignKey('suppliers.id'), nullable=True)
+    created_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    closed_at = Column(DateTime(timezone=True), nullable=True)
+
+    email_interactions = relationship('EmailInteraction', back_populates='session')
+    quotes = relationship('SupplierQuote', back_populates='session')
+
+
+# =====================================================
+# 12. EMAIL INTERACTIONS (Communication Tracking)
+# =====================================================
+class EmailInteraction(Base):
+    __tablename__ = 'email_interactions'
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey('procurement_sessions.id'), nullable=True, index=True)
+    supplier_id = Column(Integer, ForeignKey('suppliers.id'), nullable=False, index=True)
+    product_name = Column(String, nullable=True)
+    quantity_requested = Column(Integer, nullable=True)
+    specs = Column(Text, nullable=True)
+
+    status = Column(String, nullable=False, default='inquiry_pending')
+
+    # --- n8n-compatible column names ---
+    message_id = Column(String, nullable=True)        # Gmail message ID
+    thread_id = Column(String, nullable=True, index=True)  # Gmail thread ID
+    subject = Column(Text, nullable=True)              # Email subject
+    body = Column(Text, nullable=True)                 # Email body
+    email_type = Column(String, nullable=True)         # inquiry, reply, follow_up
+    recipient_email = Column(String, nullable=True)
+    sender_email = Column(String, nullable=True)
+    inquiry_details = Column(Text, nullable=True)      # JSON of inquiry params
+    extracted_data = Column(Text, nullable=True)       # JSON of AI-extracted quote
+
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    received_at = Column(DateTime(timezone=True), nullable=True)  # When reply arrived
+    follow_up_sent_at = Column(DateTime(timezone=True), nullable=True)
+
+    # --- Dashboard-specific fields ---
+    followup_count = Column(Integer, default=0)
+    max_followups = Column(Integer, default=2)
+    escalated_at = Column(DateTime(timezone=True), nullable=True)
+    escalation_reason = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    session = relationship('ProcurementSession', back_populates='email_interactions')
+    supplier = relationship('Supplier', back_populates='email_interactions')
+    quote = relationship('SupplierQuote', back_populates='interaction', uselist=False)
+    logs = relationship('EmailInteractionLog', back_populates='interaction',
+                        cascade='all, delete-orphan', order_by='EmailInteractionLog.created_at')
+
+
+# =====================================================
+# 13. SUPPLIER QUOTES (Extracted Quote Data)
+# =====================================================
+class SupplierQuote(Base):
+    __tablename__ = 'supplier_quotes'
+
+    id = Column(Integer, primary_key=True, index=True)
+    interaction_id = Column(Integer, ForeignKey('email_interactions.id'), nullable=True, unique=True)
+    supplier_id = Column(Integer, ForeignKey('suppliers.id'), nullable=False, index=True)
+    session_id = Column(Integer, ForeignKey('procurement_sessions.id'), nullable=True, index=True)
+
+    unit_price = Column(Float, nullable=True)
+    currency = Column(String, default="USD")
+    minimum_order_qty = Column(Integer, nullable=True)
+    lead_time_days = Column(Integer, nullable=True)
+    payment_terms = Column(String, nullable=True)
+    validity_days = Column(Integer, nullable=True)
+
+    total_quoted_amount = Column(Float, nullable=True)
+    discount_offered = Column(Float, nullable=True)
+    delivery_terms = Column(String, nullable=True)
+
+    notes = Column(Text, nullable=True)
+    raw_email_text = Column(Text, nullable=True)
+    ai_extraction_confidence = Column(Float, default=100.0)
+
+    is_approved = Column(Boolean, default=False)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    interaction = relationship('EmailInteraction', back_populates='quote')
+    supplier = relationship('Supplier', back_populates='quotes')
+    session = relationship('ProcurementSession', back_populates='quotes')
+
+
+# =====================================================
+# 14. EMAIL INTERACTION LOGS (Timeline)
+# =====================================================
+class EmailInteractionLog(Base):
+    __tablename__ = 'email_interaction_logs'
+
+    id = Column(Integer, primary_key=True, index=True)
+    interaction_id = Column(Integer, ForeignKey('email_interactions.id'), nullable=False, index=True)
+    
+    event_type = Column(String, nullable=False) # e.g. INQUIRY_TRIGGERED, INQUIRY_SENT, FOLLOW_UP_1, REPLY_RECEIVED, QUOTE_EXTRACTED
+    event_data = Column(Text, nullable=True)    # JSON structured data
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    interaction = relationship('EmailInteraction', back_populates='logs')
