@@ -2,12 +2,26 @@
 ChainMind Supply Intelligence - Application Entry Point
 ======================================================
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 import database
 import models
-from api.routes import ai, ai_tools, dashboard, inventory, logistics, orders, procurement, products
+from api.routes import (
+    ai,
+    ai_tools,
+    auth,
+    dashboard,
+    inventory,
+    logistics,
+    logistics_orders,
+    manufacturing,
+    orders,
+    procurement,
+    products,
+    published_goods,
+)
+from api.auth_handler import get_current_user
 from config import settings
 from services.logistics_tracker import realtime_manager
 
@@ -26,6 +40,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Auth route (public, no token required) ---
+app.include_router(auth.router)
+
+# --- Protected/Public routers mix (simplest method for now) ---
 app.include_router(dashboard.router)
 app.include_router(products.router)
 app.include_router(procurement.router)
@@ -34,6 +52,11 @@ app.include_router(logistics.router)
 app.include_router(ai.router)
 app.include_router(ai_tools.router)
 app.include_router(inventory.router)
+
+# --- New routers from CodeByAmruta ---
+app.include_router(manufacturing.router)
+app.include_router(published_goods.router)
+app.include_router(logistics_orders.router)
 
 
 @app.on_event("startup")
@@ -55,6 +78,9 @@ async def root():
             "External factors analysis",
             "Seasonal pattern detection",
             "AI-powered insights",
+            "JWT Authentication",
+            "Manufacturing Management",
+            "Marketplace & Published Goods",
         ],
     }
 
