@@ -1,0 +1,31 @@
+# Core Backend Dependencies
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+python-dotenv
+pandas
+numpy
+geopy
+requests
+python-multipart
+psycopg2-binary
+gunicorn
+PyJWT
+passlib[bcrypt]
+
+# AI & Forecasting Dependencies
+prophet
+openai
+google-generativeai
+pydantic-settings
+plotly
+
+# Streamlit Frontend Dependencies
+streamlit>=1.35.0
+streamlit-mic-recorder
+streamlit-folium
+folium
+polyline
+altair<5
+watchdog

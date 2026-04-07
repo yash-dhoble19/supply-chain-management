@@ -1,0 +1,32 @@
+# Environment variables
+.env
+
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Streamlit
+.streamlit/
+
+# OS files
+.DS_Store
+
+# Databases
+*.db
+supply_chain.db
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/tailwind.config.js
+frontend/tailwind.config.d.ts
+frontend/*.tsbuildinfo
+
+# Local runtime helpers and logs
+run-logs/
