@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from "react";
 import type { AppPage } from "./types/app.types";
+import type { AuthUser } from "./services/authService";
 
 const Dashboard = lazy(() =>
   import("./pages/Dashboard").then((module) => ({
@@ -125,6 +126,10 @@ function AppShellFallback() {
 
 function App() {
   const [activePage, setActivePage] = useState<AppPage>(() => getPageFromPath(window.location.pathname));
+  const [user, setUser] = useState<AuthUser | null>(() => {
+    const saved = localStorage.getItem("scm-user");
+    return saved ? JSON.parse(saved) : null;
+  });
 
   useEffect(() => {
     const handlePopState = () => setActivePage(getPageFromPath(window.location.pathname));
@@ -138,6 +143,27 @@ function App() {
       window.history.pushState({}, "", nextPath);
     }
     setActivePage(page);
+  };
+
+  const handleLogin = (newUser: AuthUser, token: string) => {
+    setUser(newUser);
+    localStorage.setItem("scm-token", token);
+    localStorage.setItem("scm-user", JSON.stringify(newUser));
+    // Redirect based on role
+    if (newUser.role === "driver") {
+      navigate("driverDashboard");
+    } else if (newUser.role === "retailer") {
+      navigate("retailerDashboard");
+    } else {
+      navigate("dashboard");
+    }
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem("scm-token");
+    localStorage.removeItem("scm-user");
+    navigate("login");
   };
 
   return (
@@ -158,9 +184,17 @@ function App() {
         <ProcurementIntelligence activePage={activePage} onNavigate={navigate} />
       ) : null}
       {activePage === "aiTools" ? <AiTools activePage={activePage} onNavigate={navigate} /> : null}
-      {activePage === "login" ? <Login activePage={activePage} onNavigate={navigate} /> : null}
-      {activePage === "driverDashboard" ? <DriverDashboard activePage={activePage} onNavigate={navigate} /> : null}
-      {activePage === "retailerDashboard" ? <RetailerDashboard activePage={activePage} onNavigate={navigate} /> : null}
+      
+      {activePage === "login" ? <Login onLogin={handleLogin} /> : null}
+      
+      {activePage === "driverDashboard" ? (
+        user ? <DriverDashboard user={user} onLogout={handleLogout} /> : <Login onLogin={handleLogin} />
+      ) : null}
+      
+      {activePage === "retailerDashboard" ? (
+        user ? <RetailerDashboard user={user} onLogout={handleLogout} /> : <Login onLogin={handleLogin} />
+      ) : null}
+
       {activePage === "finishedStocks" ? <FinishedStocks activePage={activePage} onNavigate={navigate} /> : null}
     </Suspense>
   );

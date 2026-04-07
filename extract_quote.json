@@ -1,0 +1,17 @@
+{
+  "parameters": {
+    "promptType": "define",
+    "text": "=Extract the following information from this supplier email:\n\nEmail: {{ $(\"Check Gmail Every 5 Minutes\").item.json.text }}\n\nExtract and return ONLY a JSON object with these fields:\n- pricePerUnit: number (extract the unit price)\n- deliveryDate: string (ISO date format if mentioned)\n- moq: number (minimum order quantity)\n- paymentTerms: string (e.g., \"Net 30\", \"50% upfront\")\n- contactDetails: string (phone or additional contact info)\n\nIf any field is not mentioned, use null. Return ONLY valid JSON, no other text.",
+    "options": {
+      "systemMessage": "You are a data extraction assistant. Extract structured information from emails and return only valid JSON."
+    }
+  },
+  "id": "a1dbfd83-4f8c-4976-b1dd-ef5641d813dc",
+  "name": "Extract Quote Information",
+  "type": "@n8n/n8n-nodes-langchain.agent",
+  "typeVersion": 3.1,
+  "position": [
+    688,
+    704
+  ]
+}

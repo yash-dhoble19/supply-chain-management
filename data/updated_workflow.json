@@ -1,0 +1,2308 @@
+{
+  "id": "FJogRQZQSNViU8y5",
+  "name": "Supplier Inquiry Automation - Workflow 1",
+  "active": true,
+  "isArchived": false,
+  "versionId": "d1ef6c65-9ff3-400d-83a8-6b9970ebb968",
+  "activeVersionId": "d1ef6c65-9ff3-400d-83a8-6b9970ebb968",
+  "triggerCount": 3,
+  "createdAt": "2026-04-01T10:31:03.160Z",
+  "updatedAt": "2026-04-03T10:48:01.585Z",
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "dynamic",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "connections": {
+    "Receive Inquiry Request": {
+      "main": [
+        [
+          {
+            "node": "Get Supplier Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Supplier Info": {
+      "main": [
+        [
+          {
+            "node": "Generate Inquiry Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Inquiry Email": {
+      "main": [
+        [
+          {
+            "node": "Send Inquiry Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq AI Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Inquiry Email",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Generate Follow-up Email",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Extract Quote Information",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Generate Follow-up Email 1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Inquiry Email": {
+      "main": [
+        [
+          {
+            "node": "Log Sent Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Sent Email": {
+      "main": [
+        [
+          {
+            "node": "Wait 24 Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 24 Hours": {
+      "main": [
+        [
+          {
+            "node": "Check For Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check For Reply": {
+      "main": [
+        [
+          {
+            "node": "Reply Received?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply Received?": {
+      "main": [
+        [
+          {
+            "node": "Send Dashboard Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Follow-up Email": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up Email": {
+      "main": [
+        [
+          {
+            "node": "Log Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Follow-up Email": {
+      "main": [
+        [
+          {
+            "node": "Send Dashboard Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Gmail Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Match Supplier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Supplier": {
+      "main": [
+        [
+          {
+            "node": "Extract Quote Information",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Quote Information": {
+      "main": [
+        [
+          {
+            "node": "Save Received Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Received Email": {
+      "main": [
+        [
+          {
+            "node": "Update Supplier Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Supplier Record": {
+      "main": [
+        [
+          {
+            "node": "Notify Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Mark Email as Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Find Pending Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Pending Emails": {
+      "main": [
+        [
+          {
+            "node": "Double Check Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Double Check Reply": {
+      "main": [
+        [
+          {
+            "node": "Should Send Follow-up?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send Follow-up?": {
+      "main": [
+        [
+          {
+            "node": "Generate Follow-up Email 1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check 48-Hour Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Follow-up Email 1": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-up Email 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up Email 1": {
+      "main": [
+        [
+          {
+            "node": "Mark Follow-up Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Follow-up Sent": {
+      "main": [
+        [
+          {
+            "node": "Log Follow-up Email 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Follow-up Email 1": {
+      "main": [
+        [
+          {
+            "node": "Notify Dashboard - Follow-up Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check 48-Hour Escalation": {
+      "main": [
+        [
+          {
+            "node": "Mark Low Responsiveness",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Low Responsiveness": {
+      "main": [
+        [
+          {
+            "node": "Send Escalation Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "4b6edecd-d363-4750-8ee3-7dacdea39fe4",
+      "name": "Receive Inquiry Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        416
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "supplier-inquiry",
+        "options": {}
+      },
+      "webhookId": "8a4e171d-28bf-468f-b59a-6a35916b50b1"
+    },
+    {
+      "id": "75167559-c88a-484a-9b52-7b30a0fad734",
+      "name": "Get Supplier Info",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        464,
+        416
+      ],
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "suppliers"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.body.supplierId }}"
+            }
+          ]
+        },
+        "options": {},
+        "resource": "database"
+      }
+    },
+    {
+      "id": "cebfab5a-60bd-4d9e-a476-21f0f459bec6",
+      "name": "Generate Inquiry Email",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        688,
+        304
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "=Generate a professional supplier inquiry email with the following details:\n\nSupplier: {{ $(\"Get Supplier Info\").item.json.company_name }}\nContact: {{ $(\"Get Supplier Info\").item.json.contact_name }}\nProduct: {{ $(\"Receive Inquiry Request\").item.json.body.productName }}\nQuantity: {{ $(\"Receive Inquiry Request\").item.json.body.quantity }}\nDeadline: {{ $(\"Receive Inquiry Request\").item.json.body.deadline }}\nBudget: ${{ $(\"Receive Inquiry Request\").item.json.body.budget }}\n\nRequest the following information:\n- Price per unit\n- Minimum Order Quantity (MOQ)\n- Lead time for delivery\n- Payment terms\n- Quality certifications\n\nSign as Marcus Chen, Procurement Manager at ChainMind Supply Intelligence.\nUse a professional, courteous tone. Return only the email body text without subject line.",
+        "options": {
+          "systemMessage": "You are a professional procurement manager writing supplier inquiry emails. Generate clear, concise, and professional emails."
+        }
+      }
+    },
+    {
+      "id": "e6649362-a361-4ef6-baf2-a125d74bd0c4",
+      "name": "Groq AI Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        768,
+        528
+      ],
+      "parameters": {
+        "model": "llama3-70b-8192",
+        "options": {
+          "maxTokensToSample": 2048,
+          "temperature": 0.7
+        }
+      }
+    },
+    {
+      "id": "0df94ec5-dfa1-4dd9-b32d-8c93b4f6c34b",
+      "name": "Send Inquiry Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        416
+      ],
+      "parameters": {
+        "sendTo": "={{ $(\"Get Supplier Info\").item.json.contact_email }}",
+        "subject": "=Inquiry: {{ $(\"Receive Inquiry Request\").item.json.body.productName }} - ChainMind Supply Intelligence",
+        "emailType": "text",
+        "message": "={{ $json.output }}",
+        "options": {
+          "senderName": "Marcus Chen - ChainMind Supply Intelligence"
+        },
+        "resource": "message",
+        "operation": "send"
+      },
+      "webhookId": "17d79a49-6bc7-4cc0-860e-bd5f60de607a"
+    },
+    {
+      "id": "acfa8a63-2401-462a-83db-5496366fa77e",
+      "name": "Log Sent Email",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1328,
+        416
+      ],
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "email_interactions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "supplier_id": "={{ $(\"Receive Inquiry Request\").item.json.body.supplierId }}",
+            "message_id": "={{ $(\"Send Inquiry Email\").item.json.id }}",
+            "thread_id": "={{ $(\"Send Inquiry Email\").item.json.threadId }}",
+            "status": "sent",
+            "email_type": "inquiry",
+            "sent_at": "={{ $now.toISO() }}",
+            "recipient_email": "={{ $(\"Get Supplier Info\").item.json.contact_email }}",
+            "subject": "=Inquiry: {{ $(\"Receive Inquiry Request\").item.json.body.productName }} - ChainMind Supply Intelligence",
+            "body": "={{ $(\"Generate Inquiry Email\").item.json.output }}",
+            "inquiry_details": "={{ JSON.stringify($(\"Receive Inquiry Request\").item.json.body) }}"
+          }
+        },
+        "options": {},
+        "resource": "database"
+      }
+    },
+    {
+      "id": "f8e237eb-4d57-4b35-b312-b1920c6eb446",
+      "name": "Wait 24 Hours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1616,
+        416
+      ],
+      "parameters": {
+        "amount": 24,
+        "unit": "hours"
+      },
+      "webhookId": "ae9904cf-5039-449d-839e-b4ead352d18e"
+    },
+    {
+      "id": "6dd3106b-225e-49fd-a0dd-9d7f5ed724ab",
+      "name": "Check For Reply",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1840,
+        416
+      ],
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "email_interactions"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "thread_id",
+              "value": "={{ $(\"Send Inquiry Email\").item.json.threadId }}"
+            },
+            {
+              "column": "status",
+              "value": "reply_received"
+            }
+          ]
+        },
+        "options": {},
+        "resource": "database"
+      }
+    },
+    {
+      "id": "5b0d3588-d708-49dd-a84e-05b8befcaa10",
+      "name": "Reply Received?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2064,
+        416
+      ],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.thread_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "db58994a-e64a-444d-b3f3-ecd3fb1c9476",
+      "name": "Send Dashboard Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3088,
+        416
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://unreplevined-meritorious-darline.ngrok-free.dev/api/webhooks/inquiry-sent",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"status\": \"success\",\n  \"messageId\": $(\"Send Inquiry Email\").item.json.id,\n  \"threadId\": $(\"Send Inquiry Email\").item.json.threadId,\n  \"recipient\": $(\"Get Supplier Info\").item.json.contact_email,\n  \"timestamp\": $(\"Log Sent Email\").item.json.sent_at,\n  \"replyReceived\": $(\"Check For Reply\").item.json.thread_id ? true : false,\n  \"followUpSent\": $(\"Check For Reply\").item.json.thread_id ? false : true,\n  \"nextReminderTime\": $(\"Check For Reply\").item.json.thread_id ? null : $now.plus({ days: 1 }).toISO()\n} }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "02fa90fe-8855-46a3-b9e4-8476fa0f903c",
+      "name": "Generate Follow-up Email",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2288,
+        656
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "=Generate a friendly follow-up email for the supplier inquiry sent 24 hours ago.\n\nOriginal inquiry details:\nSupplier: {{ $(\"Get Supplier Info\").item.json.company_name }}\nProduct: {{ $(\"Receive Inquiry Request\").item.json.body.productName }}\nQuantity: {{ $(\"Receive Inquiry Request\").item.json.body.quantity }}\n\nPolitely remind them of the inquiry and request a response. Mention the deadline is approaching. Sign as Marcus Chen, Procurement Manager at ChainMind Supply Intelligence. Keep it brief and professional. Return only the email body text.",
+        "options": {
+          "systemMessage": "You are a professional procurement manager writing follow-up emails. Be polite, brief, and professional."
+        }
+      }
+    },
+    {
+      "id": "0cf67bac-d53a-4ed7-9115-b3c8e3736d15",
+      "name": "Send Follow-up Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2640,
+        656
+      ],
+      "parameters": {
+        "sendTo": "={{ $(\"Get Supplier Info\").item.json.contact_email }}",
+        "subject": "=Re: Inquiry: {{ $(\"Receive Inquiry Request\").item.json.body.productName }} - ChainMind Supply Intelligence",
+        "emailType": "text",
+        "message": "={{ $json.output }}",
+        "options": {
+          "senderName": "Marcus Chen - ChainMind Supply Intelligence"
+        },
+        "resource": "message",
+        "operation": "send"
+      },
+      "webhookId": "fe8a714b-01bb-4add-a0df-a7d85e282a97"
+    },
+    {
+      "id": "e6ddb041-2a96-4f79-94f7-884ea0251822",
+      "name": "Log Follow-up Email",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2864,
+        656
+      ],
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "email_interactions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "supplier_id": "={{ $(\"Receive Inquiry Request\").item.json.body.supplierId }}",
+            "message_id": "={{ $(\"Send Follow-up Email\").item.json.id }}",
+            "thread_id": "={{ $(\"Send Follow-up Email\").item.json.threadId }}",
+            "status": "follow_up_sent",
+            "email_type": "follow_up",
+            "sent_at": "={{ $now.toISO() }}",
+            "recipient_email": "={{ $(\"Get Supplier Info\").item.json.contact_email }}",
+            "subject": "=Re: Inquiry: {{ $(\"Receive Inquiry Request\").item.json.body.productName }} - ChainMind Supply Intelligence",
+            "body": "={{ $(\"Generate Follow-up Email\").item.json.output }}"
+          }
+        },
+        "options": {},
+        "resource": "database"
+      }
+    },
+    {
+      "id": "9a9977c1-5781-468b-b763-c38a95bc65db",
+      "name": "Check Gmail Every 5 Minutes",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        704
+      ],
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 5,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "includeSpamTrash": false,
+          "q": "",
+          "readStatus": "unread",
+          "sender": ""
+        },
+        "options": {
+          "downloadAttachments": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "424aed07-0d24-440b-9d4c-ed0202d81992",
+      "name": "Match Supplier",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        464,
+        704
+      ],
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "suppliers"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "contact_email",
+              "value": "={{ $json.from.value[0].address }}"
+            }
+          ]
+        },
+        "options": {},
+        "resource": "database"
+      }
+    },
+    {
+      "id": "a1dbfd83-4f8c-4976-b1dd-ef5641d813dc",
+      "name": "Extract Quote Information",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        688,
+        704
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "=Extract the following information from this supplier email:\n\nEmail: {{ $(\"Check Gmail Every 5 Minutes\").item.json.text }}\n\nExtract and return ONLY a JSON object with these fields:\n- pricePerUnit: number (extract the unit price)\n- deliveryDate: string (ISO date format if mentioned)\n- moq: number (minimum order quantity)\n- paymentTerms: string (e.g., \"Net 30\", \"50% upfront\")\n- contactDetails: string (phone or additional contact info)\n\nIf any field is not mentioned, use null. Return ONLY valid JSON, no other text.",
+        "options": {
+          "systemMessage": "You are a data extraction assistant. Extract structured information from emails and return only valid JSON."
+        }
+      }
+    },
+    {
+      "id": "128e068b-57b4-4b97-884a-0c5b9bdd88cd",
+      "name": "Save Received Email",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1040,
+        704
+      ],
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "email_interactions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "supplier_id": "={{ $(\"Match Supplier\").item.json.id }}",
+            "message_id": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.id }}",
+            "thread_id": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.threadId }}",
+            "status": "reply_received",
+            "email_type": "reply",
+            "received_at": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.date }}",
+            "sender_email": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.from.value[0].address }}",
+            "subject": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.subject }}",
+            "body": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.text }}",
+            "extracted_data": "={{ $(\"Extract Quote Information\").item.json.output }}"
+          }
+        },
+        "options": {},
+        "resource": "database"
+      }
+    },
+    {
+      "id": "4f6b9a9b-3bcc-4886-97e6-3bb62d09e1ff",
+      "name": "Update Supplier Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1328,
+        704
+      ],
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "suppliers"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "last_reply_at": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.date }}",
+            "latest_quote_price": "={{ JSON.parse($(\"Extract Quote Information\").item.json.output).pricePerUnit }}",
+            "latest_quote_delivery": "={{ JSON.parse($(\"Extract Quote Information\").item.json.output).deliveryDate }}"
+          }
+        },
+        "options": {},
+        "resource": "database"
+      }
+    },
+    {
+      "id": "3bd09c9f-cbf8-4a5a-aa68-ea7100b124c5",
+      "name": "Notify Dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1616,
+        704
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://unreplevined-meritorious-darline.ngrok-free.dev/api/webhooks/supplier-replied",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"supplierId\": $(\"Match Supplier\").item.json.id,\n  \"companyName\": $(\"Match Supplier\").item.json.company_name,\n  \"senderEmail\": $(\"Check Gmail Every 5 Minutes\").item.json.from.value[0].address,\n  \"subject\": $(\"Check Gmail Every 5 Minutes\").item.json.subject,\n  \"receivedAt\": $(\"Check Gmail Every 5 Minutes\").item.json.date,\n  \"emailBody\": $(\"Check Gmail Every 5 Minutes\").item.json.text,\n  \"extractedQuote\": JSON.parse($(\"Extract Quote Information\").item.json.output)\n} }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "23e55157-8b14-4f18-8db4-92344031f5d8",
+      "name": "Mark Email as Read",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1840,
+        704
+      ],
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.id }}",
+        "resource": "message"
+      },
+      "webhookId": "46386291-3b88-405a-9a10-1a5be865c06a"
+    },
+    {
+      "id": "66637d69-386e-426e-9526-d5da37547d0e",
+      "name": "Run Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        992
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c69c3b08-f34a-4c9c-afb3-f3b0220e2f55",
+      "name": "Find Pending Emails",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        464,
+        992
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT ei.*, s.company_name, s.contact_email, s.contact_name\nFROM email_interactions ei\nJOIN suppliers s ON ei.supplier_id = s.id\nWHERE ei.status = 'sent'\nAND ei.sent_at < NOW() - INTERVAL '24 hours'\nAND NOT EXISTS (\n  SELECT 1 FROM email_interactions ei2\n  WHERE ei2.thread_id = ei.thread_id\n  AND ei2.status IN ('reply_received', 'follow_up_sent')\n)",
+        "options": {},
+        "resource": "database"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "390ef0af-1743-487e-833b-8c3eb8b231bc",
+      "name": "Double Check Reply",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        752,
+        992
+      ],
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "email_interactions"
+        },
+        "limit": 1,
+        "where": {
+          "values": [
+            {
+              "column": "thread_id",
+              "value": "={{ $json.thread_id }}"
+            },
+            {
+              "column": "status",
+              "value": "reply_received"
+            }
+          ]
+        },
+        "options": {},
+        "resource": "database"
+      }
+    },
+    {
+      "id": "c0970c3b-293a-433c-b3b6-f838bf69ea75",
+      "name": "Should Send Follow-up?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1040,
+        992
+      ],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.thread_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "notExists"
+              }
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2ba21380-4d12-4d48-a715-30f1e774e345",
+      "name": "Generate Follow-up Email 1",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1264,
+        1088
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "=Generate a friendly follow-up email for a supplier inquiry that has not received a response.\n\nSupplier: {{ $(\"Find Pending Emails\").item.json.company_name }}\nContact: {{ $(\"Find Pending Emails\").item.json.contact_name }}\nOriginal Subject: {{ $(\"Find Pending Emails\").item.json.subject }}\nInquiry Details: {{ $(\"Find Pending Emails\").item.json.inquiry_details }}\nDays Since Sent: {{ Math.floor(($now.toMillis() - new Date($(\"Find Pending Emails\").item.json.sent_at).getTime()) / (1000 * 60 * 60 * 24)) }}\n\nWrite a polite follow-up that:\n- References the original inquiry\n- Restates the key requirements\n- Requests an urgent response within 2-3 days\n- Maintains a professional and courteous tone\n\nSign as Marcus Chen, Procurement Manager at ChainMind Supply Intelligence. Return only the email body text.",
+        "options": {
+          "systemMessage": "You are a professional procurement manager writing follow-up emails. Be polite, clear, and professional."
+        }
+      }
+    },
+    {
+      "id": "510327f4-2e60-4e26-bdef-a292a288910d",
+      "name": "Send Follow-up Email 1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1616,
+        1088
+      ],
+      "parameters": {
+        "sendTo": "={{ $(\"Find Pending Emails\").item.json.contact_email }}",
+        "subject": "=Re: {{ $(\"Find Pending Emails\").item.json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.output }}",
+        "options": {
+          "senderName": "Marcus Chen - ChainMind Supply Intelligence"
+        },
+        "resource": "message",
+        "operation": "send"
+      },
+      "webhookId": "55e5b777-aab3-405c-ab34-481ec83d1df8"
+    },
+    {
+      "id": "f1a17d77-7500-409b-b055-6e56de2e29d3",
+      "name": "Mark Follow-up Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1840,
+        1088
+      ],
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "email_interactions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "follow_up_sent",
+            "follow_up_sent_at": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {},
+        "resource": "database"
+      }
+    },
+    {
+      "id": "d852137e-b3fa-43e7-9a45-bf025eab5088",
+      "name": "Log Follow-up Email 1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2064,
+        1088
+      ],
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "email_interactions"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "supplier_id": "={{ $(\"Find Pending Emails\").item.json.supplier_id }}",
+            "message_id": "={{ $(\"Send Follow-up Email 1\").item.json.id }}",
+            "thread_id": "={{ $(\"Send Follow-up Email 1\").item.json.threadId }}",
+            "status": "follow_up_sent",
+            "email_type": "follow_up",
+            "sent_at": "={{ $now.toISO() }}",
+            "recipient_email": "={{ $(\"Find Pending Emails\").item.json.contact_email }}",
+            "subject": "=Re: {{ $(\"Find Pending Emails\").item.json.subject }}",
+            "body": "={{ $(\"Generate Follow-up Email 1\").item.json.output }}"
+          }
+        },
+        "options": {},
+        "resource": "database"
+      }
+    },
+    {
+      "id": "09c90ac6-99a2-4756-8b00-0128c38ee8d7",
+      "name": "Notify Dashboard - Follow-up Sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2352,
+        1088
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://unreplevined-meritorious-darline.ngrok-free.dev/api/webhooks/followup-sent",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"supplierId\": $(\"Find Pending Emails\").item.json.supplier_id,\n  \"companyName\": $(\"Find Pending Emails\").item.json.company_name,\n  \"followUpSent\": true,\n  \"sentAt\": $now.toISO(),\n  \"responseDeadline\": $now.plus({ days: 3 }).toISO(),\n  \"threadId\": $(\"Find Pending Emails\").item.json.thread_id\n} }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "014a6b6e-5bdd-4c01-a016-89722bcc66cd",
+      "name": "Check 48-Hour Escalation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1328,
+        896
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT ei.*, s.company_name, s.contact_email\nFROM email_interactions ei\nJOIN suppliers s ON ei.supplier_id = s.id\nWHERE ei.status IN ('sent', 'follow_up_sent')\nAND ei.sent_at < NOW() - INTERVAL '48 hours'\nAND NOT EXISTS (\n  SELECT 1 FROM email_interactions ei2\n  WHERE ei2.thread_id = ei.thread_id\n  AND ei2.status = 'reply_received'\n)",
+        "options": {},
+        "resource": "database"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "b148a7d6-6828-49b7-b0e1-d582ab4506bb",
+      "name": "Mark Low Responsiveness",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1616,
+        896
+      ],
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "suppliers"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "responsiveness_status": "low_responsiveness",
+            "last_escalation_at": "={{ $now.toISO() }}"
+          }
+        },
+        "options": {},
+        "resource": "database"
+      }
+    },
+    {
+      "id": "3a160cae-f0c4-4e5c-9a9d-5a4b33cce679",
+      "name": "Send Escalation Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1840,
+        896
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://unreplevined-meritorious-darline.ngrok-free.dev/api/webhooks/escalation-alert",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"alertType\": \"NO_RESPONSE_48H\",\n  \"supplierId\": $json.supplier_id,\n  \"companyName\": $json.company_name,\n  \"threadId\": $json.thread_id,\n  \"hoursSinceInquiry\": 48,\n  \"recommendation\": \"Consider alternative suppliers\",\n  \"escalatedAt\": $now.toISO()\n} }}",
+        "options": {}
+      }
+    }
+  ],
+  "activeVersion": {
+    "nodes": [
+      {
+        "id": "4b6edecd-d363-4750-8ee3-7dacdea39fe4",
+        "name": "Receive Inquiry Request",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          240,
+          416
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "supplier-inquiry",
+          "options": {}
+        },
+        "webhookId": "8a4e171d-28bf-468f-b59a-6a35916b50b1"
+      },
+      {
+        "id": "75167559-c88a-484a-9b52-7b30a0fad734",
+        "name": "Get Supplier Info",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          464,
+          416
+        ],
+        "parameters": {
+          "operation": "select",
+          "schema": {
+            "__rl": true,
+            "mode": "list",
+            "value": "public"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "list",
+            "value": "suppliers"
+          },
+          "limit": 1,
+          "where": {
+            "values": [
+              {
+                "column": "id",
+                "value": "={{ $json.body.supplierId }}"
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "cebfab5a-60bd-4d9e-a476-21f0f459bec6",
+        "name": "Generate Inquiry Email",
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3.1,
+        "position": [
+          688,
+          304
+        ],
+        "parameters": {
+          "promptType": "define",
+          "text": "=Generate a professional supplier inquiry email with the following details:\n\nSupplier: {{ $(\"Get Supplier Info\").item.json.company_name }}\nContact: {{ $(\"Get Supplier Info\").item.json.contact_name }}\nProduct: {{ $(\"Receive Inquiry Request\").item.json.body.productName }}\nQuantity: {{ $(\"Receive Inquiry Request\").item.json.body.quantity }}\nDeadline: {{ $(\"Receive Inquiry Request\").item.json.body.deadline }}\nBudget: ${{ $(\"Receive Inquiry Request\").item.json.body.budget }}\n\nRequest the following information:\n- Price per unit\n- Minimum Order Quantity (MOQ)\n- Lead time for delivery\n- Payment terms\n- Quality certifications\n\nSign as Marcus Chen, Procurement Manager at ChainMind Supply Intelligence.\nUse a professional, courteous tone. Return only the email body text without subject line.",
+          "options": {
+            "systemMessage": "You are a professional procurement manager writing supplier inquiry emails. Generate clear, concise, and professional emails."
+          }
+        }
+      },
+      {
+        "id": "e6649362-a361-4ef6-baf2-a125d74bd0c4",
+        "name": "Groq AI Model",
+        "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+        "typeVersion": 1,
+        "position": [
+          768,
+          528
+        ],
+        "parameters": {
+          "model": "llama3-70b-8192",
+          "options": {
+            "maxTokensToSample": 2048,
+            "temperature": 0.7
+          }
+        }
+      },
+      {
+        "id": "0df94ec5-dfa1-4dd9-b32d-8c93b4f6c34b",
+        "name": "Send Inquiry Email",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.2,
+        "position": [
+          1040,
+          416
+        ],
+        "parameters": {
+          "sendTo": "={{ $(\"Get Supplier Info\").item.json.contact_email }}",
+          "subject": "=Inquiry: {{ $(\"Receive Inquiry Request\").item.json.body.productName }} - ChainMind Supply Intelligence",
+          "emailType": "text",
+          "message": "={{ $json.output }}",
+          "options": {
+            "senderName": "Marcus Chen - ChainMind Supply Intelligence"
+          }
+        },
+        "webhookId": "17d79a49-6bc7-4cc0-860e-bd5f60de607a"
+      },
+      {
+        "id": "acfa8a63-2401-462a-83db-5496366fa77e",
+        "name": "Log Sent Email",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1328,
+          416
+        ],
+        "parameters": {
+          "operation": "insert",
+          "schema": {
+            "__rl": true,
+            "mode": "list",
+            "value": "public"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "list",
+            "value": "email_interactions"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "supplier_id": "={{ $(\"Receive Inquiry Request\").item.json.body.supplierId }}",
+              "message_id": "={{ $(\"Send Inquiry Email\").item.json.id }}",
+              "thread_id": "={{ $(\"Send Inquiry Email\").item.json.threadId }}",
+              "status": "sent",
+              "email_type": "inquiry",
+              "sent_at": "={{ $now.toISO() }}",
+              "recipient_email": "={{ $(\"Get Supplier Info\").item.json.contact_email }}",
+              "subject": "=Inquiry: {{ $(\"Receive Inquiry Request\").item.json.body.productName }} - ChainMind Supply Intelligence",
+              "body": "={{ $(\"Generate Inquiry Email\").item.json.output }}",
+              "inquiry_details": "={{ JSON.stringify($(\"Receive Inquiry Request\").item.json.body) }}"
+            }
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "f8e237eb-4d57-4b35-b312-b1920c6eb446",
+        "name": "Wait 24 Hours",
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          1616,
+          416
+        ],
+        "parameters": {
+          "amount": 24,
+          "unit": "hours"
+        },
+        "webhookId": "ae9904cf-5039-449d-839e-b4ead352d18e"
+      },
+      {
+        "id": "6dd3106b-225e-49fd-a0dd-9d7f5ed724ab",
+        "name": "Check For Reply",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1840,
+          416
+        ],
+        "parameters": {
+          "operation": "select",
+          "schema": {
+            "__rl": true,
+            "mode": "list",
+            "value": "public"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "list",
+            "value": "email_interactions"
+          },
+          "limit": 1,
+          "where": {
+            "values": [
+              {
+                "column": "thread_id",
+                "value": "={{ $(\"Send Inquiry Email\").item.json.threadId }}"
+              },
+              {
+                "column": "status",
+                "value": "reply_received"
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "5b0d3588-d708-49dd-a84e-05b8befcaa10",
+        "name": "Reply Received?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2064,
+          416
+        ],
+        "parameters": {
+          "conditions": {
+            "conditions": [
+              {
+                "leftValue": "={{ $json.thread_id }}",
+                "operator": {
+                  "type": "string",
+                  "operation": "exists"
+                }
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "db58994a-e64a-444d-b3f3-ecd3fb1c9476",
+        "name": "Send Dashboard Confirmation",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          3088,
+          416
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://unreplevined-meritorious-darline.ngrok-free.dev/api/webhooks/inquiry-sent",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ {\n  \"status\": \"success\",\n  \"messageId\": $(\"Send Inquiry Email\").item.json.id,\n  \"threadId\": $(\"Send Inquiry Email\").item.json.threadId,\n  \"recipient\": $(\"Get Supplier Info\").item.json.contact_email,\n  \"timestamp\": $(\"Log Sent Email\").item.json.sent_at,\n  \"replyReceived\": $(\"Check For Reply\").item.json.thread_id ? true : false,\n  \"followUpSent\": $(\"Check For Reply\").item.json.thread_id ? false : true,\n  \"nextReminderTime\": $(\"Check For Reply\").item.json.thread_id ? null : $now.plus({ days: 1 }).toISO()\n} }}",
+          "options": {}
+        }
+      },
+      {
+        "id": "02fa90fe-8855-46a3-b9e4-8476fa0f903c",
+        "name": "Generate Follow-up Email",
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3.1,
+        "position": [
+          2288,
+          656
+        ],
+        "parameters": {
+          "promptType": "define",
+          "text": "=Generate a friendly follow-up email for the supplier inquiry sent 24 hours ago.\n\nOriginal inquiry details:\nSupplier: {{ $(\"Get Supplier Info\").item.json.company_name }}\nProduct: {{ $(\"Receive Inquiry Request\").item.json.body.productName }}\nQuantity: {{ $(\"Receive Inquiry Request\").item.json.body.quantity }}\n\nPolitely remind them of the inquiry and request a response. Mention the deadline is approaching. Sign as Marcus Chen, Procurement Manager at ChainMind Supply Intelligence. Keep it brief and professional. Return only the email body text.",
+          "options": {
+            "systemMessage": "You are a professional procurement manager writing follow-up emails. Be polite, brief, and professional."
+          }
+        }
+      },
+      {
+        "id": "0cf67bac-d53a-4ed7-9115-b3c8e3736d15",
+        "name": "Send Follow-up Email",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.2,
+        "position": [
+          2640,
+          656
+        ],
+        "parameters": {
+          "sendTo": "={{ $(\"Get Supplier Info\").item.json.contact_email }}",
+          "subject": "=Re: Inquiry: {{ $(\"Receive Inquiry Request\").item.json.body.productName }} - ChainMind Supply Intelligence",
+          "emailType": "text",
+          "message": "={{ $json.output }}",
+          "options": {
+            "senderName": "Marcus Chen - ChainMind Supply Intelligence"
+          }
+        },
+        "webhookId": "fe8a714b-01bb-4add-a0df-a7d85e282a97"
+      },
+      {
+        "id": "e6ddb041-2a96-4f79-94f7-884ea0251822",
+        "name": "Log Follow-up Email",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          2864,
+          656
+        ],
+        "parameters": {
+          "operation": "insert",
+          "schema": {
+            "__rl": true,
+            "mode": "list",
+            "value": "public"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "list",
+            "value": "email_interactions"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "supplier_id": "={{ $(\"Receive Inquiry Request\").item.json.body.supplierId }}",
+              "message_id": "={{ $(\"Send Follow-up Email\").item.json.id }}",
+              "thread_id": "={{ $(\"Send Follow-up Email\").item.json.threadId }}",
+              "status": "follow_up_sent",
+              "email_type": "follow_up",
+              "sent_at": "={{ $now.toISO() }}",
+              "recipient_email": "={{ $(\"Get Supplier Info\").item.json.contact_email }}",
+              "subject": "=Re: Inquiry: {{ $(\"Receive Inquiry Request\").item.json.body.productName }} - ChainMind Supply Intelligence",
+              "body": "={{ $(\"Generate Follow-up Email\").item.json.output }}"
+            }
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "9a9977c1-5781-468b-b763-c38a95bc65db",
+        "name": "Check Gmail Every 5 Minutes",
+        "type": "n8n-nodes-base.gmailTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          240,
+          704
+        ],
+        "parameters": {
+          "pollTimes": {
+            "item": [
+              {
+                "mode": "everyX",
+                "value": 5,
+                "unit": "minutes"
+              }
+            ]
+          },
+          "simple": false,
+          "filters": {
+            "includeSpamTrash": false,
+            "q": "",
+            "readStatus": "unread",
+            "sender": ""
+          },
+          "options": {
+            "downloadAttachments": false
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "424aed07-0d24-440b-9d4c-ed0202d81992",
+        "name": "Match Supplier",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          464,
+          704
+        ],
+        "parameters": {
+          "operation": "select",
+          "schema": {
+            "__rl": true,
+            "mode": "list",
+            "value": "public"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "list",
+            "value": "suppliers"
+          },
+          "limit": 1,
+          "where": {
+            "values": [
+              {
+                "column": "contact_email",
+                "value": "={{ $json.from.value[0].address }}"
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "a1dbfd83-4f8c-4976-b1dd-ef5641d813dc",
+        "name": "Extract Quote Information",
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3.1,
+        "position": [
+          688,
+          704
+        ],
+        "parameters": {
+          "promptType": "define",
+          "text": "=Extract the following information from this supplier email:\n\nEmail: {{ $(\"Check Gmail Every 5 Minutes\").item.json.text }}\n\nExtract and return ONLY a JSON object with these fields:\n- pricePerUnit: number (extract the unit price)\n- deliveryDate: string (ISO date format if mentioned)\n- moq: number (minimum order quantity)\n- paymentTerms: string (e.g., \"Net 30\", \"50% upfront\")\n- contactDetails: string (phone or additional contact info)\n\nIf any field is not mentioned, use null. Return ONLY valid JSON, no other text.",
+          "options": {
+            "systemMessage": "You are a data extraction assistant. Extract structured information from emails and return only valid JSON."
+          }
+        }
+      },
+      {
+        "id": "128e068b-57b4-4b97-884a-0c5b9bdd88cd",
+        "name": "Save Received Email",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1040,
+          704
+        ],
+        "parameters": {
+          "operation": "insert",
+          "schema": {
+            "__rl": true,
+            "mode": "list",
+            "value": "public"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "list",
+            "value": "email_interactions"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "supplier_id": "={{ $(\"Match Supplier\").item.json.id }}",
+              "message_id": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.id }}",
+              "thread_id": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.threadId }}",
+              "status": "reply_received",
+              "email_type": "reply",
+              "received_at": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.date }}",
+              "sender_email": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.from.value[0].address }}",
+              "subject": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.subject }}",
+              "body": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.text }}",
+              "extracted_data": "={{ $(\"Extract Quote Information\").item.json.output }}"
+            }
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "4f6b9a9b-3bcc-4886-97e6-3bb62d09e1ff",
+        "name": "Update Supplier Record",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1328,
+          704
+        ],
+        "parameters": {
+          "operation": "update",
+          "schema": {
+            "__rl": true,
+            "mode": "list",
+            "value": "public"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "list",
+            "value": "suppliers"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "last_reply_at": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.date }}",
+              "latest_quote_price": "={{ JSON.parse($(\"Extract Quote Information\").item.json.output).pricePerUnit }}",
+              "latest_quote_delivery": "={{ JSON.parse($(\"Extract Quote Information\").item.json.output).deliveryDate }}"
+            }
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "3bd09c9f-cbf8-4a5a-aa68-ea7100b124c5",
+        "name": "Notify Dashboard",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1616,
+          704
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://unreplevined-meritorious-darline.ngrok-free.dev/api/webhooks/supplier-replied",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ {\n  \"supplierId\": $(\"Match Supplier\").item.json.id,\n  \"companyName\": $(\"Match Supplier\").item.json.company_name,\n  \"senderEmail\": $(\"Check Gmail Every 5 Minutes\").item.json.from.value[0].address,\n  \"subject\": $(\"Check Gmail Every 5 Minutes\").item.json.subject,\n  \"receivedAt\": $(\"Check Gmail Every 5 Minutes\").item.json.date,\n  \"emailBody\": $(\"Check Gmail Every 5 Minutes\").item.json.text,\n  \"extractedQuote\": JSON.parse($(\"Extract Quote Information\").item.json.output)\n} }}",
+          "options": {}
+        }
+      },
+      {
+        "id": "23e55157-8b14-4f18-8db4-92344031f5d8",
+        "name": "Mark Email as Read",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.2,
+        "position": [
+          1840,
+          704
+        ],
+        "parameters": {
+          "operation": "markAsRead",
+          "messageId": "={{ $(\"Check Gmail Every 5 Minutes\").item.json.id }}"
+        },
+        "webhookId": "46386291-3b88-405a-9a10-1a5be865c06a"
+      },
+      {
+        "id": "66637d69-386e-426e-9526-d5da37547d0e",
+        "name": "Run Every Hour",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          240,
+          992
+        ],
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "hours"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "c69c3b08-f34a-4c9c-afb3-f3b0220e2f55",
+        "name": "Find Pending Emails",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          464,
+          992
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT ei.*, s.company_name, s.contact_email, s.contact_name\nFROM email_interactions ei\nJOIN suppliers s ON ei.supplier_id = s.id\nWHERE ei.status = 'sent'\nAND ei.sent_at < NOW() - INTERVAL '24 hours'\nAND NOT EXISTS (\n  SELECT 1 FROM email_interactions ei2\n  WHERE ei2.thread_id = ei.thread_id\n  AND ei2.status IN ('reply_received', 'follow_up_sent')\n)",
+          "options": {}
+        },
+        "executeOnce": true
+      },
+      {
+        "id": "390ef0af-1743-487e-833b-8c3eb8b231bc",
+        "name": "Double Check Reply",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          752,
+          992
+        ],
+        "parameters": {
+          "operation": "select",
+          "schema": {
+            "__rl": true,
+            "mode": "list",
+            "value": "public"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "list",
+            "value": "email_interactions"
+          },
+          "limit": 1,
+          "where": {
+            "values": [
+              {
+                "column": "thread_id",
+                "value": "={{ $json.thread_id }}"
+              },
+              {
+                "column": "status",
+                "value": "reply_received"
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "c0970c3b-293a-433c-b3b6-f838bf69ea75",
+        "name": "Should Send Follow-up?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1040,
+          992
+        ],
+        "parameters": {
+          "conditions": {
+            "conditions": [
+              {
+                "leftValue": "={{ $json.thread_id }}",
+                "operator": {
+                  "type": "string",
+                  "operation": "notExists"
+                }
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "2ba21380-4d12-4d48-a715-30f1e774e345",
+        "name": "Generate Follow-up Email 1",
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3.1,
+        "position": [
+          1264,
+          1088
+        ],
+        "parameters": {
+          "promptType": "define",
+          "text": "=Generate a friendly follow-up email for a supplier inquiry that has not received a response.\n\nSupplier: {{ $(\"Find Pending Emails\").item.json.company_name }}\nContact: {{ $(\"Find Pending Emails\").item.json.contact_name }}\nOriginal Subject: {{ $(\"Find Pending Emails\").item.json.subject }}\nInquiry Details: {{ $(\"Find Pending Emails\").item.json.inquiry_details }}\nDays Since Sent: {{ Math.floor(($now.toMillis() - new Date($(\"Find Pending Emails\").item.json.sent_at).getTime()) / (1000 * 60 * 60 * 24)) }}\n\nWrite a polite follow-up that:\n- References the original inquiry\n- Restates the key requirements\n- Requests an urgent response within 2-3 days\n- Maintains a professional and courteous tone\n\nSign as Marcus Chen, Procurement Manager at ChainMind Supply Intelligence. Return only the email body text.",
+          "options": {
+            "systemMessage": "You are a professional procurement manager writing follow-up emails. Be polite, clear, and professional."
+          }
+        }
+      },
+      {
+        "id": "510327f4-2e60-4e26-bdef-a292a288910d",
+        "name": "Send Follow-up Email 1",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.2,
+        "position": [
+          1616,
+          1088
+        ],
+        "parameters": {
+          "sendTo": "={{ $(\"Find Pending Emails\").item.json.contact_email }}",
+          "subject": "=Re: {{ $(\"Find Pending Emails\").item.json.subject }}",
+          "emailType": "text",
+          "message": "={{ $json.output }}",
+          "options": {
+            "senderName": "Marcus Chen - ChainMind Supply Intelligence"
+          }
+        },
+        "webhookId": "55e5b777-aab3-405c-ab34-481ec83d1df8"
+      },
+      {
+        "id": "f1a17d77-7500-409b-b055-6e56de2e29d3",
+        "name": "Mark Follow-up Sent",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1840,
+          1088
+        ],
+        "parameters": {
+          "operation": "update",
+          "schema": {
+            "__rl": true,
+            "mode": "list",
+            "value": "public"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "list",
+            "value": "email_interactions"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "status": "follow_up_sent",
+              "follow_up_sent_at": "={{ $now.toISO() }}"
+            }
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "d852137e-b3fa-43e7-9a45-bf025eab5088",
+        "name": "Log Follow-up Email 1",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          2064,
+          1088
+        ],
+        "parameters": {
+          "operation": "insert",
+          "schema": {
+            "__rl": true,
+            "mode": "list",
+            "value": "public"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "list",
+            "value": "email_interactions"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "supplier_id": "={{ $(\"Find Pending Emails\").item.json.supplier_id }}",
+              "message_id": "={{ $(\"Send Follow-up Email 1\").item.json.id }}",
+              "thread_id": "={{ $(\"Send Follow-up Email 1\").item.json.threadId }}",
+              "status": "follow_up_sent",
+              "email_type": "follow_up",
+              "sent_at": "={{ $now.toISO() }}",
+              "recipient_email": "={{ $(\"Find Pending Emails\").item.json.contact_email }}",
+              "subject": "=Re: {{ $(\"Find Pending Emails\").item.json.subject }}",
+              "body": "={{ $(\"Generate Follow-up Email 1\").item.json.output }}"
+            }
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "09c90ac6-99a2-4756-8b00-0128c38ee8d7",
+        "name": "Notify Dashboard - Follow-up Sent",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2352,
+          1088
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://unreplevined-meritorious-darline.ngrok-free.dev/api/webhooks/followup-sent",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ {\n  \"supplierId\": $(\"Find Pending Emails\").item.json.supplier_id,\n  \"companyName\": $(\"Find Pending Emails\").item.json.company_name,\n  \"followUpSent\": true,\n  \"sentAt\": $now.toISO(),\n  \"responseDeadline\": $now.plus({ days: 3 }).toISO(),\n  \"threadId\": $(\"Find Pending Emails\").item.json.thread_id\n} }}",
+          "options": {}
+        }
+      },
+      {
+        "id": "014a6b6e-5bdd-4c01-a016-89722bcc66cd",
+        "name": "Check 48-Hour Escalation",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1328,
+          896
+        ],
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT ei.*, s.company_name, s.contact_email\nFROM email_interactions ei\nJOIN suppliers s ON ei.supplier_id = s.id\nWHERE ei.status IN ('sent', 'follow_up_sent')\nAND ei.sent_at < NOW() - INTERVAL '48 hours'\nAND NOT EXISTS (\n  SELECT 1 FROM email_interactions ei2\n  WHERE ei2.thread_id = ei.thread_id\n  AND ei2.status = 'reply_received'\n)",
+          "options": {}
+        },
+        "executeOnce": true
+      },
+      {
+        "id": "b148a7d6-6828-49b7-b0e1-d582ab4506bb",
+        "name": "Mark Low Responsiveness",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          1616,
+          896
+        ],
+        "parameters": {
+          "operation": "update",
+          "schema": {
+            "__rl": true,
+            "mode": "list",
+            "value": "public"
+          },
+          "table": {
+            "__rl": true,
+            "mode": "list",
+            "value": "suppliers"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "responsiveness_status": "low_responsiveness",
+              "last_escalation_at": "={{ $now.toISO() }}"
+            }
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "3a160cae-f0c4-4e5c-9a9d-5a4b33cce679",
+        "name": "Send Escalation Alert",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1840,
+          896
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://unreplevined-meritorious-darline.ngrok-free.dev/api/webhooks/escalation-alert",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ {\n  \"alertType\": \"NO_RESPONSE_48H\",\n  \"supplierId\": $json.supplier_id,\n  \"companyName\": $json.company_name,\n  \"threadId\": $json.thread_id,\n  \"hoursSinceInquiry\": 48,\n  \"recommendation\": \"Consider alternative suppliers\",\n  \"escalatedAt\": $now.toISO()\n} }}",
+          "options": {}
+        }
+      }
+    ],
+    "connections": {
+      "Receive Inquiry Request": {
+        "main": [
+          [
+            {
+              "node": "Get Supplier Info",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Supplier Info": {
+        "main": [
+          [
+            {
+              "node": "Generate Inquiry Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Generate Inquiry Email": {
+        "main": [
+          [
+            {
+              "node": "Send Inquiry Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Groq AI Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "Generate Inquiry Email",
+              "type": "ai_languageModel",
+              "index": 0
+            },
+            {
+              "node": "Generate Follow-up Email",
+              "type": "ai_languageModel",
+              "index": 0
+            },
+            {
+              "node": "Extract Quote Information",
+              "type": "ai_languageModel",
+              "index": 0
+            },
+            {
+              "node": "Generate Follow-up Email 1",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Inquiry Email": {
+        "main": [
+          [
+            {
+              "node": "Log Sent Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Log Sent Email": {
+        "main": [
+          [
+            {
+              "node": "Wait 24 Hours",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait 24 Hours": {
+        "main": [
+          [
+            {
+              "node": "Check For Reply",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check For Reply": {
+        "main": [
+          [
+            {
+              "node": "Reply Received?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Reply Received?": {
+        "main": [
+          [
+            {
+              "node": "Send Dashboard Confirmation",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Generate Follow-up Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Generate Follow-up Email": {
+        "main": [
+          [
+            {
+              "node": "Send Follow-up Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Follow-up Email": {
+        "main": [
+          [
+            {
+              "node": "Log Follow-up Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Log Follow-up Email": {
+        "main": [
+          [
+            {
+              "node": "Send Dashboard Confirmation",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check Gmail Every 5 Minutes": {
+        "main": [
+          [
+            {
+              "node": "Match Supplier",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Match Supplier": {
+        "main": [
+          [
+            {
+              "node": "Extract Quote Information",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Quote Information": {
+        "main": [
+          [
+            {
+              "node": "Save Received Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Save Received Email": {
+        "main": [
+          [
+            {
+              "node": "Update Supplier Record",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Supplier Record": {
+        "main": [
+          [
+            {
+              "node": "Notify Dashboard",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Notify Dashboard": {
+        "main": [
+          [
+            {
+              "node": "Mark Email as Read",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Run Every Hour": {
+        "main": [
+          [
+            {
+              "node": "Find Pending Emails",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Find Pending Emails": {
+        "main": [
+          [
+            {
+              "node": "Double Check Reply",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Double Check Reply": {
+        "main": [
+          [
+            {
+              "node": "Should Send Follow-up?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Should Send Follow-up?": {
+        "main": [
+          [
+            {
+              "node": "Generate Follow-up Email 1",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Check 48-Hour Escalation",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Generate Follow-up Email 1": {
+        "main": [
+          [
+            {
+              "node": "Send Follow-up Email 1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Follow-up Email 1": {
+        "main": [
+          [
+            {
+              "node": "Mark Follow-up Sent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Mark Follow-up Sent": {
+        "main": [
+          [
+            {
+              "node": "Log Follow-up Email 1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Log Follow-up Email 1": {
+        "main": [
+          [
+            {
+              "node": "Notify Dashboard - Follow-up Sent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check 48-Hour Escalation": {
+        "main": [
+          [
+            {
+              "node": "Mark Low Responsiveness",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Mark Low Responsiveness": {
+        "main": [
+          [
+            {
+              "node": "Send Escalation Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    }
+  },
+  "tags": [],
+  "meta": {
+    "aiBuilderAssisted": true
+  },
+  "parentFolderId": null,
+  "description": "AI-powered supplier inquiry automation: sends emails, monitors replies, sends follow-ups, and escalates unresponsive suppliers.",
+  "scopes": [
+    "workflow:create",
+    "workflow:delete",
+    "workflow:execute",
+    "workflow:execute-chat",
+    "workflow:list",
+    "workflow:move",
+    "workflow:publish",
+    "workflow:read",
+    "workflow:share",
+    "workflow:unpublish",
+    "workflow:unshare",
+    "workflow:update",
+    "workflow:updateRedactionSetting"
+  ],
+  "canExecute": true
+}
