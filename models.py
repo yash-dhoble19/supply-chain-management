@@ -522,3 +522,66 @@ class EmailInteractionLog(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     interaction = relationship('EmailInteraction', back_populates='logs')
+
+# =====================================================
+# 13. MANUFACTURING GOODS (Production Tracking)
+# =====================================================
+class ManufacturingGoods(Base):
+    __tablename__ = "manufacturing_goods"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sku = Column(String, unique=True, index=True, nullable=False)
+    product_name = Column(String, nullable=False)
+    status = Column(String, default="Pending")
+    progress = Column(Integer, default=0)  # 0-100
+    start_date = Column(Date, nullable=True)
+    est_completion = Column(Date, nullable=True)
+    unit_price = Column(Float, nullable=False)
+
+# =====================================================
+# 14. PUBLISHED GOODS (Marketplace)
+# =====================================================
+class PublishedGoods(Base):
+    __tablename__ = "published_goods"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    sku = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    category = Column(String, nullable=False)
+    unit_price = Column(Float, nullable=False)
+    image_url = Column(Text, nullable=True)
+    supplier_name = Column(String, nullable=True)
+    published_at = Column(DateTime(timezone=True), server_default=func.now())
+    notes = Column(Text, nullable=True)
+
+    # Optionally, link to product
+    product = relationship("Product")
+
+# =====================================================
+# 15. LOGISTICS ORDERS (For Logistics Dashboard)
+# =====================================================
+class LogisticsOrder(Base):
+    __tablename__ = "logistics_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, nullable=True)  # Link to sales order (nullable for now)
+    product_name = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    unit_price = Column(Float, nullable=False)
+    status = Column(String, default="Pending")  # Will be updated to 'In Progress' when accepted by driver
+    driver_id = Column(Integer, nullable=True)  # Ensure this is present for assignment
+    current_location_lat = Column(Float, nullable=True)
+    current_location_lon = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    retailer_name = Column(String, nullable=True)
+    retailer_email = Column(String, nullable=True)
+    retailer_phone = Column(String, nullable=True)
+    retailer_location = Column(String, nullable=True)
+    sku = Column(String, nullable=True)
+    category = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    imageUrl = Column(Text, nullable=True)
+    supplierName = Column(String, nullable=True)
+    publishedAt = Column(String, nullable=True)
+
