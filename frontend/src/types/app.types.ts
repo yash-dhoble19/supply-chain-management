@@ -6,4 +6,8 @@ export type AppPage =
   | "purchaseOrders"
   | "demandForecasting"
   | "createForecast"
-  | "aiTools";
+  | "aiTools"
+  | "login"
+  | "driverDashboard"
+  | "retailerDashboard"
+  | "finishedStocks";

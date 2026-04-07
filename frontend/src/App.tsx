@@ -41,6 +41,26 @@ const AiTools = lazy(() =>
     default: module.AiTools,
   })),
 );
+const Login = lazy(() =>
+  import("./pages/Login").then((module) => ({
+    default: module.Login,
+  })),
+);
+const DriverDashboard = lazy(() =>
+  import("./pages/DriverDashboard").then((module) => ({
+    default: module.DriverDashboard,
+  })),
+);
+const RetailerDashboard = lazy(() =>
+  import("./pages/RetailerDashboard").then((module) => ({
+    default: module.RetailerDashboard,
+  })),
+);
+const FinishedStocks = lazy(() =>
+  import("./pages/FinishedStocks").then((module) => ({
+    default: module.FinishedStocks,
+  })),
+);
 
 const pathByPage: Record<AppPage, string> = {
   dashboard: "/dashboard",
@@ -51,6 +71,10 @@ const pathByPage: Record<AppPage, string> = {
   demandForecasting: "/demand-forecasting",
   createForecast: "/create-forecast",
   aiTools: "/ai-tools",
+  login: "/loginpage",
+  driverDashboard: "/driver-dashboard",
+  retailerDashboard: "/retailer-dashboard",
+  finishedStocks: "/finished-stocks",
 };
 
 function getPageFromPath(pathname: string): AppPage {
@@ -69,6 +93,14 @@ function getPageFromPath(pathname: string): AppPage {
       return "createForecast";
     case "/ai-tools":
       return "aiTools";
+    case "/loginpage":
+      return "login";
+    case "/driver-dashboard":
+      return "driverDashboard";
+    case "/retailer-dashboard":
+      return "retailerDashboard";
+    case "/finished-stocks":
+      return "finishedStocks";
     case "/":
     case "/procurement":
     default:
@@ -126,6 +158,10 @@ function App() {
         <ProcurementIntelligence activePage={activePage} onNavigate={navigate} />
       ) : null}
       {activePage === "aiTools" ? <AiTools activePage={activePage} onNavigate={navigate} /> : null}
+      {activePage === "login" ? <Login activePage={activePage} onNavigate={navigate} /> : null}
+      {activePage === "driverDashboard" ? <DriverDashboard activePage={activePage} onNavigate={navigate} /> : null}
+      {activePage === "retailerDashboard" ? <RetailerDashboard activePage={activePage} onNavigate={navigate} /> : null}
+      {activePage === "finishedStocks" ? <FinishedStocks activePage={activePage} onNavigate={navigate} /> : null}
     </Suspense>
   );
 }
