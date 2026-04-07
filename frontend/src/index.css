@@ -393,6 +393,19 @@ body {
   margin-top: 24px;
 }
 
+.hero-alert {
+  width: calc(100% - 24px);
+  max-width: 1200px;
+  margin: 16px auto 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid #fcd34d;
+  background: #fef3c7;
+  color: #92400e;
+  font-weight: 600;
+  text-align: center;
+}
+
 .demand-content > .demand-hero {
   margin-top: 16px;
 }
@@ -616,6 +629,12 @@ body {
   font-family: inherit;
 }
 
+.demand-intelligence-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .demand-cta:hover {
   background: #2563eb;
   transform: translateY(-1px);
@@ -806,6 +825,10 @@ body {
   background: #f59e0b;
 }
 
+.forecast-section.config-section::before {
+  background: #0ea5e9;
+}
+
 .forecast-section-header {
   display: flex;
   align-items: center;
@@ -841,6 +864,54 @@ body {
   margin: 0;
   color: #475569;
   font-size: 0.85rem;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.config-field select {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #f9fafb;
+  font: inherit;
+  color: #0f172a;
+}
+
+.config-toggle-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.config-toggle {
+  border: 1px solid #94a3b8;
+  background: #f8fafc;
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-weight: 600;
+  color: #0f172a;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  cursor: pointer;
+}
+
+.config-toggle.active {
+  background: #0ea5e9;
+  color: #fff;
+  border-color: #0ea5e9;
 }
 
 .upload-dropzone {
@@ -1272,6 +1343,31 @@ body {
   gap: 16px;
 }
 
+.demand-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.demand-summary-note {
+  display: block;
+  margin-top: 6px;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.demand-summary-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: #3b82f6;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .demand-box {
   border: 1px solid #e5e7eb;
   border-radius: 12px;
@@ -1286,6 +1382,12 @@ body {
 
 .demand-box-store {
   background: #eef2ff;
+}
+
+.demand-intelligence-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .demand-box h4 {

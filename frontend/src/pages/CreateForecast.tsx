@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import type { ChangeEvent, DragEvent, MouseEvent } from "react";
 import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
@@ -18,7 +18,6 @@ interface DataMapping {
   salesColumn: string;
   productColumn: string;
   storeColumn: string;
-  priceColumn: string;
 }
 
 interface ValidationModalInfo {
@@ -35,65 +34,361 @@ interface DataSummary {
   status: string;
   productMetric?: { count: number; text: string };
   storeMetric?: { count: number; text: string };
+  dataRetention?: string;
+  timeRange?: string;
+  fileSizeLabel?: string;
+  missingValuesLabel?: string;
+  negativeSalesLabel?: string;
+  outliersLabel?: string;
 }
 
-interface ProductMappingState {
-  fileName: string | null;
-  headers: string[];
-  rows: CsvRow[];
-  status: string | null;
-  idColumn: string;
-  nameColumn: string;
-  fileSize: string | null;
-}
-
-interface StoreMappingState {
-  fileName: string | null;
-  headers: string[];
-  rows: CsvRow[];
-  status: string | null;
-  storeIdColumn: string;
-  cityColumn: string;
-  stateColumn: string;
-  countryColumn: string;
-  fileSize: string | null;
-}
-
-const initialProductMapping: ProductMappingState = {
-  fileName: null,
-  headers: [],
-  rows: [],
-  status: null,
-  idColumn: "",
-  nameColumn: "",
-  fileSize: null,
+type FeatureStore = {
+  demandSeries: Record<string, number[]>;
+  metadata: {
+    products: string[];
+    stores: string[];
+    dateRange: string;
+  };
+  productMetadata: Record<string, ProductMetadata>;
 };
 
-const initialStoreMapping: StoreMappingState = {
-  fileName: null,
-  headers: [],
-  rows: [],
-  status: null,
-  storeIdColumn: "",
-  cityColumn: "",
-  stateColumn: "",
-  countryColumn: "",
-  fileSize: null,
-};
+interface DecisionInsights {
+  heroAlert?: string | null;
+  timeRange?: string;
+}
 
-const detectProductColumns = (headers: string[]) => ({
-  idColumn: pickColumn(headers, ["product_id", "id", "sku", "product"]),
-  nameColumn: pickColumn(headers, ["product_name", "name", "title", "label"]),
-});
+interface ProductMetadata {
+  productId?: string;
+  productName?: string;
+  productCategory?: string;
+}
 
-const detectStoreColumns = (headers: string[]) => ({
-  storeIdColumn: pickColumn(headers, ["store_id", "store", "id", "branch"]),
-  cityColumn: pickColumn(headers, ["city", "town", "district", "metro"]),
-  stateColumn: pickColumn(headers, ["state", "region", "province", "state/region"]),
-  countryColumn: pickColumn(headers, ["country", "nation", "country_name"]),
-});
+interface DemandInsightModalInfo {
+  title: string;
+  list: string[];
+  more: string | null;
+}
+
+type ForecastLevel = "overall" | "product" | "location" | "combined";
+
+type UploadErrorType = "unsupported" | "empty" | "corrupt" | "tooLarge" | null;
+
+interface ClearUploadedFileOptions {
+  nextError?: UploadErrorType;
+  keepStatus?: boolean;
+}
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const FILE_TOO_LARGE_MESSAGE = "File too large. Max size is 50MB";
+const DATASET_TOO_SMALL_ERROR = "Dataset too small to generate forecast";
+const DATASET_TOO_SMALL_BULLET = "Upload at least 5 rows and 2 meaningful columns";
+const LARGE_COLUMN_WARNING = "Large number of columns may affect performance";
+const LARGE_DATASET_WARNING = "Large dataset detected. Performance may be slower.";
+const VALID_UPLOAD_TYPES = [
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+];
+
+const MAX_PREVIEW = 5;
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+const WEEK_START_DAY = "Monday";
+const TIME_GROUPING_OPTIONS = [
+  {
+    value: "Daily",
+    label: "Daily",
+    minDays: 30,
+    description: "Requires a forecast duration of at least 30 days.",
+  },
+  {
+    value: "Weekly",
+    label: "Weekly (Mon start)",
+    minDays: 84,
+    description: `Requires a forecast duration of at least 12 weeks; weeks start on ${WEEK_START_DAY}.`,
+  },
+  {
+    value: "Monthly",
+    label: "Monthly",
+    minDays: 180,
+    description: "Requires a forecast duration of at least 6 months.",
+  },
+];
+
+const TIME_GROUPING_REQUIREMENTS = TIME_GROUPING_OPTIONS.map((option) => {
+  if (option.value === "Weekly") {
+    return `${option.label} requires ≥ ${option.minDays / 7} weeks (weeks start on ${WEEK_START_DAY})`;
+  }
+  if (option.value === "Monthly") {
+    return `${option.label} requires ≥ ${option.minDays / 30} months`;
+  }
+  return `${option.label} requires ≥ ${option.minDays} days`;
+}).join(" · ");
+
+const MIN_DURATION_FOR_GROUPING = Math.min(
+  ...TIME_GROUPING_OPTIONS.map((option) => option.minDays),
+);
+
+const FORECAST_LEVEL_OPTIONS: { value: ForecastLevel; label: string; description: string }[] = [
+  { value: "overall", label: "Overall Forecast", description: "Uses all data; recommended for single product/location teams." },
+  { value: "product", label: "Product-Level Forecast", description: "Drills into SKU-level patterns (category → name/ID priority)." },
+  { value: "location", label: "Location-Level Forecast", description: "Focuses on hierarchy (country → state → city/area → store)." },
+  { value: "combined", label: "Product + Location Forecast", description: "Aligns SKU and location logic for precise distribution planning." },
+];
+
+const LOCATION_FIELD_PRIORITY = [
+  { key: "country", label: "Country", keywords: ["country", "nation"] },
+  { key: "state", label: "State", keywords: ["state", "province", "region"] },
+  { key: "city", label: "City", keywords: ["city", "town", "district", "metro"] },
+  { key: "area", label: "Area/Zone", keywords: ["area", "zone", "territory"] },
+  { key: "storeId", label: "Store ID", keywords: ["store id", "storeid", "store_id", "branch_id", "outlet_id", "shop_id"] },
+];
+
+const FORECAST_DURATION_OPTIONS = [
+  { value: 7, label: "7 Days" },
+  { value: 15, label: "15 Days" },
+  { value: 30, label: "30 Days" },
+  { value: 90, label: "90 Days" },
+  { value: 180, label: "180 Days" },
+];
+
+type DemandType = "Smooth" | "Erratic" | "Intermittent" | "New" | "Seasonal";
+
+interface DemandAnalysisResult {
+  counts: Record<DemandType, number>;
+  totalGroups: number;
+  groupsByType: Record<DemandType, string[]>;
+}
+
+interface AnalysisResults {
+  productDemandAnalysis: DemandAnalysisResult;
+  locationDemandAnalysis: DemandAnalysisResult;
+  productMetadata: Record<string, ProductMetadata>;
+}
+
+type ForecastSection = {
+  sectionName: string;
+  chart: {
+    history: { date: string; value: number }[];
+    forecast: { date: string; p10: number; p50: number; p90: number }[];
+  };
+  metrics: {
+    totalForecast: number;
+    avgDailyForecast: number;
+    minForecast: number;
+    maxForecast: number;
+  };
+  table: {
+    date: string;
+    forecast: number;
+    lowerBound: number;
+    upperBound: number;
+  }[];
+};
+
+type ForecastConfig = {
+  windowSize: number;
+  forecastDurationDays: number;
+};
+
+const roundTwo = (value: number) => Math.round(value * 100) / 100;
+
+const parseSalesValue = (value: string | undefined): number | null => {
+  if (!value) {
+    return null;
+  }
+  const cleaned = value.replace(/[^0-9.\-]/g, "");
+  if (!cleaned) {
+    return null;
+  }
+  const parsed = Number(cleaned);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+export function generateOverallMovingAverageForecast(
+  cleanedRows: Array<Record<string, string>>,
+  mapping: { dateColumn: string; salesColumn: string },
+  config: ForecastConfig,
+): ForecastSection {
+  const salesByDate: Record<string, number> = {};
+
+  cleanedRows.forEach((row) => {
+    const dateValue = row[mapping.dateColumn];
+    const salesValue = parseSalesValue(row[mapping.salesColumn]);
+    if (!dateValue || salesValue === null) {
+      return;
+    }
+    const normalizedDate = dateValue.slice(0, 10);
+    salesByDate[normalizedDate] =
+      (salesByDate[normalizedDate] ?? 0) + salesValue;
+  });
+
+  const sortedDates = Object.keys(salesByDate).sort(
+    (a, b) => new Date(a).getTime() - new Date(b).getTime(),
+  );
+
+  if (!sortedDates.length) {
+    const emptyForecast = Array.from(
+      { length: config.forecastDurationDays },
+      () => ({
+        date: "",
+        p10: 0,
+        p50: 0,
+        p90: 0,
+      }),
+    );
+    return {
+      sectionName: "Overall Demand Forecast",
+      chart: { history: [], forecast: emptyForecast },
+      metrics: {
+        totalForecast: 0,
+        avgDailyForecast: 0,
+        minForecast: 0,
+        maxForecast: 0,
+      },
+      table: emptyForecast.map((entry) => ({
+        date: entry.date,
+        forecast: entry.p50,
+        lowerBound: entry.p10,
+        upperBound: entry.p90,
+      })),
+    };
+  }
+
+  const parseDate = (value: string) => new Date(value);
+  const formatDate = (date: Date) => date.toISOString().split("T")[0];
+  const firstDate = parseDate(sortedDates[0]);
+  const lastDate = parseDate(sortedDates[sortedDates.length - 1]);
+  const allDates: string[] = [];
+
+  for (
+    let cursor = new Date(firstDate);
+    cursor <= lastDate;
+    cursor.setDate(cursor.getDate() + 1)
+  ) {
+    allDates.push(formatDate(new Date(cursor)));
+  }
+
+  const history = allDates.map((date) => ({
+    date,
+    value: roundTwo(salesByDate[date] ?? 0),
+  }));
+
+  const windowSize = Math.max(
+    1,
+    Math.min(config.windowSize, history.length),
+  );
+  const values = history.map((item) => item.value);
+  const forecast: ForecastSection["chart"]["forecast"] = [];
+  const rolling: number[] = [...values.slice(-windowSize)];
+  const lastHistoryDate = new Date(allDates[allDates.length - 1]);
+
+  for (let i = 1; i <= config.forecastDurationDays; i += 1) {
+    const sum = rolling.reduce((total, value) => total + value, 0);
+    const avg = roundTwo(sum / rolling.length);
+    const forecastDate = new Date(lastHistoryDate);
+    forecastDate.setDate(forecastDate.getDate() + i);
+    const p50 = avg;
+    const p10 = roundTwo(p50 * 0.9);
+    const p90 = roundTwo(p50 * 1.1);
+
+    forecast.push({
+      date: formatDate(forecastDate),
+      p10,
+      p50,
+      p90,
+    });
+
+    rolling.push(avg);
+    if (rolling.length > windowSize) {
+      rolling.shift();
+    }
+  }
+
+  const p50Values = forecast.map((entry) => entry.p50);
+  const totalForecast = roundTwo(
+    p50Values.reduce((sum, value) => sum + value, 0),
+  );
+  const avgDailyForecast = roundTwo(
+    totalForecast / Math.max(1, config.forecastDurationDays)
+  );
+  const minForecast = roundTwo(Math.min(...p50Values));
+  const maxForecast = roundTwo(Math.max(...p50Values));
+
+  return {
+    sectionName: "Overall Demand Forecast",
+    chart: {
+      history,
+      forecast,
+    },
+    metrics: {
+      totalForecast,
+      avgDailyForecast,
+      minForecast,
+      maxForecast,
+    },
+    table: forecast.map((entry) => ({
+      date: entry.date,
+      forecast: entry.p50,
+      lowerBound: entry.p10,
+      upperBound: entry.p90,
+    })),
+  };
+}
+
+const getDemandTypes = (): DemandType[] => [
+  "New",
+  "Intermittent",
+  "Smooth",
+  "Erratic",
+  "Seasonal",
+];
+
+const DEMAND_EXPLANATIONS: Record<DemandType, string> = {
+  Smooth: "Stable and consistent demand with low variability.",
+  Erratic: "Highly variable demand with unpredictable fluctuations.",
+  Intermittent: "Irregular demand with frequent zero-sales periods.",
+  Seasonal: "Demand follows repeating time-based patterns.",
+  New: "Insufficient historical data to establish a pattern.",
+};
+
+const createEmptyDemandAnalysis = (): DemandAnalysisResult => {
+  const demandTypes = getDemandTypes();
+  const counts = demandTypes.reduce((acc, type) => {
+    acc[type] = 0;
+    return acc;
+  }, {} as Record<DemandType, number>);
+  const groupsByType = demandTypes.reduce((acc, type) => {
+    acc[type] = [];
+    return acc;
+  }, {} as Record<DemandType, string[]>);
+  return {
+    counts,
+    totalGroups: 0,
+    groupsByType,
+  };
+};
+
+const getPreviewProducts = (products: string[]) => {
+  const visible = products.slice(0, MAX_PREVIEW);
+  return {
+    visible,
+    remaining: Math.max(0, products.length - visible.length),
+  };
+};
+
+const CONFIG = {
+  MIN_COVERAGE: 0.3,
+  OUTLIER_SIGMA: 3,
+  MIN_ROWS: 30,
+  MISSING_THRESHOLDS: {
+    LOW: 0.1,
+    HIGH: 0.3,
+  },
+};
+
+if (CONFIG.MISSING_THRESHOLDS.HIGH > CONFIG.MIN_COVERAGE) {
+  CONFIG.MISSING_THRESHOLDS.HIGH = CONFIG.MIN_COVERAGE;
+}
 
 const convertWorkbookToCsv = (workbook: XLSX.WorkBook) => {
   const csvChunks: string[] = [];
@@ -186,29 +481,6 @@ const loadFileAsCsv = (file: File): Promise<string> => {
   });
 };
 
-const processMappingFile = (
-  file: File,
-  onParsed: (headers: string[], rows: CsvRow[]) => void,
-  onError: (message: string) => void
-) => {
-  if (file.size > MAX_UPLOAD_BYTES) {
-    onError("File size exceeds 50 MB. Please upload a smaller file.");
-    return;
-  }
-
-  loadFileAsCsv(file)
-    .then((csvContent) => {
-      const parsed = parseCsvPreview(csvContent);
-      if (!parsed || !parsed.headers.length) {
-        onError("Unable to find tabular data inside the file.");
-        return;
-      }
-
-      onParsed(parsed.headers, parsed.rawRows);
-    })
-    .catch(onError);
-};
-
 interface CreateForecastProps {
   activePage: AppPage;
   onNavigate: (page: AppPage) => void;
@@ -257,9 +529,19 @@ const parseCsvPreview = (text: string, rowLimit = 5): ParsedCsvPreview | null =>
   }
 
   const parsed = lines.map(splitCsvLine);
-  const headers = parsed[0].map((value, index) =>
+  const headersRaw = parsed[0].map((value, index) =>
     value ? value : `Column ${index + 1}`
   );
+  const seenHeaders = new Map<string, number>();
+  const headers = headersRaw.map((col) => {
+    if (!seenHeaders.has(col)) {
+      seenHeaders.set(col, 0);
+      return col;
+    }
+    const next = seenHeaders.get(col)! + 1;
+    seenHeaders.set(col, next);
+    return `${col}_${next}`;
+  });
 
   const rawRows = parsed.slice(1).map((cells) => {
     const row: CsvRow = {};
@@ -274,13 +556,22 @@ const parseCsvPreview = (text: string, rowLimit = 5): ParsedCsvPreview | null =>
   return { headers, previewRows, rawRows };
 };
 
+interface CleanResult {
+  rows: CsvRow[];
+  hasNegativeSales: boolean;
+}
+
 const cleanForecastData = (
   rows: CsvRow[],
   columns: string[],
   mapping: DataMapping
-): CsvRow[] => {
+): CleanResult => {
   const seen = new Set<string>();
   const cleaned: CsvRow[] = [];
+  const numericColumns = new Set(
+    columns.filter((column) => isNumericColumn(rows, column))
+  );
+  let hasNegativeSales = false;
 
   rows.forEach((row) => {
     const normalized: CsvRow = {};
@@ -300,23 +591,52 @@ const cleanForecastData = (
       return;
     }
 
-    if (mapping.dateColumn && normalized[mapping.dateColumn]) {
-      const parsedDate = new Date(normalized[mapping.dateColumn]);
-      if (!Number.isNaN(parsedDate.getTime())) {
-        normalized[mapping.dateColumn] = parsedDate.toISOString().split("T")[0];
+    columns.forEach((column) => {
+      if (!normalized[column]) {
+        normalized[column] = numericColumns.has(column) ? "0" : "Unknown";
       }
+    });
+
+    if (mapping.dateColumn) {
+      const rawDate = normalized[mapping.dateColumn];
+      if (!rawDate) {
+        return;
+      }
+      const parsedDate = new Date(rawDate);
+      if (Number.isNaN(parsedDate.getTime())) {
+        return;
+      }
+      normalized[mapping.dateColumn] = parsedDate.toISOString().split("T")[0];
     }
 
-    if (mapping.productColumn && !normalized[mapping.productColumn]) {
+    if (
+      mapping.productColumn &&
+      normalized[mapping.productColumn] === "Unknown"
+    ) {
       normalized[mapping.productColumn] = "Unknown Product";
     }
 
-    if (mapping.storeColumn && !normalized[mapping.storeColumn]) {
+    if (
+      mapping.storeColumn &&
+      normalized[mapping.storeColumn] === "Unknown"
+    ) {
       normalized[mapping.storeColumn] = "Unknown Store";
     }
 
-    if (mapping.priceColumn && !normalized[mapping.priceColumn]) {
-      normalized[mapping.priceColumn] = "0";
+    if (mapping.salesColumn) {
+      const rawSales = normalized[mapping.salesColumn];
+      if (!rawSales) {
+        return;
+      }
+      const cleanedSales = rawSales.replace(/[^0-9.\-]/g, "");
+      const parsedSales = Number(cleanedSales);
+      if (Number.isNaN(parsedSales)) {
+        return;
+      }
+      if (parsedSales < 0) {
+        hasNegativeSales = true;
+      }
+      normalized[mapping.salesColumn] = parsedSales.toString();
     }
 
     const rowKey = columns.map((column) => normalized[column]).join("|");
@@ -328,7 +648,7 @@ const cleanForecastData = (
     cleaned.push(normalized);
   });
 
-  return cleaned;
+  return { rows: cleaned, hasNegativeSales };
 };
 
 const isNumericColumn = (rows: CsvRow[], column: string) => {
@@ -390,11 +710,131 @@ const isDateColumn = (rows: CsvRow[], column: string) => {
   return validDates / total >= 0.6;
 };
 
+const normalizeColumnName = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+
+const calculateNameMatchScore = (column: string, keywords: string[]) => {
+  const normalizedColumn = normalizeColumnName(column);
+  if (!normalizedColumn) {
+    return 0;
+  }
+
+  return keywords.reduce((best, keyword) => {
+    const normalizedKeyword = normalizeColumnName(keyword);
+    if (!normalizedKeyword) {
+      return best;
+    }
+
+    if (normalizedColumn.includes(normalizedKeyword)) {
+      return 1;
+    }
+
+    let partialScore = 0;
+    if (
+      normalizedKeyword.length >= 3 &&
+      normalizedColumn.includes(normalizedKeyword.slice(0, 3))
+    ) {
+      partialScore = 0.5;
+    }
+
+    if (
+      normalizedKeyword.length >= 5 &&
+      (normalizedColumn.startsWith(normalizedKeyword.slice(0, 5)) ||
+        normalizedColumn.endsWith(normalizedKeyword.slice(-5)))
+    ) {
+      partialScore = Math.max(partialScore, 0.7);
+    }
+
+    return Math.max(best, partialScore);
+  }, 0);
+};
+
+const calculateDataTypeMatchScore = (
+  stats: ColumnMetrics,
+  expectedType: ColumnExpectation
+) => {
+  if (expectedType === "date") {
+    return stats.isDate ? 1 : stats.nonNullRatio > 0 ? 0.3 : 0;
+  }
+  if (expectedType === "numeric") {
+    return stats.isNumeric ? 1 : stats.nonNullRatio > 0 ? 0.4 : 0;
+  }
+  if (expectedType === "id") {
+    if (stats.uniquenessScore > 0.6) {
+      return 1;
+    }
+    if (stats.uniquenessScore > 0.2) {
+      return 0.5;
+    }
+    return 0.2;
+  }
+  if (expectedType === "text" || expectedType === "category") {
+    return !stats.isNumeric && stats.nonNullRatio > 0.4 ? 0.8 : 0.3;
+  }
+  return 0.4;
+};
+
+const calculateColumnScore = ({
+  nameMatch,
+  dataTypeMatch,
+  nonNullRatio,
+  uniquenessScore,
+}: {
+  nameMatch: number;
+  dataTypeMatch: number;
+  nonNullRatio: number;
+  uniquenessScore: number;
+}) =>
+  nameMatch * COLUMN_SCORE_WEIGHTS.name +
+  dataTypeMatch * COLUMN_SCORE_WEIGHTS.dataType +
+  nonNullRatio * COLUMN_SCORE_WEIGHTS.nonNull +
+  uniquenessScore * COLUMN_SCORE_WEIGHTS.uniqueness;
+
+const getConfidenceLabel = (score: number): ConfidenceBadge => {
+  if (score >= 0.75) {
+    return { label: "✅ Auto-detected (High confidence)", tone: "high" };
+  }
+  if (score >= 0.45) {
+    return { label: "⚠ Needs attention", tone: "medium" };
+  }
+  return { label: "🟡 Suggested", tone: "low" };
+};
+
+const getNegativeSignalsForRole = (roleId: string, stats: ColumnMetrics) => {
+  const signals: string[] = [];
+  if (["sales"].includes(roleId)) {
+    if (stats.nonNullRatio > 0.4 && !stats.isNumeric) {
+      signals.push("❌ not sales");
+    }
+  }
+  if (["date"].includes(roleId)) {
+    if (stats.nonNullRatio > 0.4 && !stats.isDate) {
+      signals.push("❌ not date");
+    }
+  }
+  if (["product", "sku", "productId", "storeId"].includes(roleId)) {
+    if (stats.nonNullRatio > 0.3 && stats.uniquenessScore < 0.4) {
+      signals.push("❌ not ID");
+    }
+  }
+  if (["unitPrice", "units", "promotion"].includes(roleId)) {
+    if (stats.nonNullRatio > 0.4 && !stats.isNumeric) {
+      signals.push("❌ not numeric");
+    }
+  }
+  return signals;
+};
+
 const pickColumn = (headers: string[], keywords: string[]) => {
-  const normalized = headers.map((column) => column.toLowerCase());
+  const normalized = headers.map((column) => normalizeColumnName(column));
 
   for (const keyword of keywords) {
-    const matchIndex = normalized.findIndex((value) => value.includes(keyword));
+    const normalizedKeyword = normalizeColumnName(keyword);
+    const matchIndex = normalized.findIndex((value) =>
+      value.includes(normalizedKeyword)
+    );
     if (matchIndex !== -1) {
       return headers[matchIndex];
     }
@@ -419,6 +859,385 @@ const formatFileSize = (size: number) => {
 const formatNumber = (value: number) => value.toLocaleString();
 const supportedForecastExtensions = new Set(["csv", "xlsx", "xls"]);
 
+const detectionKeywords = {
+  date: ["date", "order date", "transaction date", "ship date"],
+  sales: ["sales", "units", "quantity", "qty", "volume", "demand", "revenue", "amount"],
+  price: ["price", "unit price", "price per unit", "rate", "value", "cost", "selling price"],
+  storeGeneral: ["store", "location", "branch", "outlet"],
+  storeId: ["store id", "storeid", "store_id", "branch_id", "outlet_id"],
+  storeName: ["store name", "store_name", "branch name", "outlet name"],
+  location: ["location", "address"],
+  region: ["region", "region name"],
+  city: ["city", "town", "district", "metro"],
+  state: ["state", "province", "state region", "state/region"],
+  country: ["country", "nation", "country name"],
+  area: ["area", "zone", "territory"],
+  sku: ["sku", "product sku", "productsku"],
+  productId: [
+    "product id",
+    "productid",
+    "product_id",
+    "item id",
+    "itemid",
+    "item_id",
+    "item code",
+    "product code",
+  ],
+  productName: ["product name", "productname", "name", "item", "label"],
+  productCategory: ["category", "segment", "class", "type", "product category"],
+  productGeneral: ["product", "item", "sku", "name", "product name"],
+};
+
+const PRODUCT_ID_KEYWORDS = ["sku", "product_id", "item_id", "code"];
+const PRODUCT_NAME_KEYWORDS = ["product", "name", "item", "description"];
+const PRODUCT_CATEGORY_KEYWORDS = ["category", "segment", "type"];
+
+interface DateCandidate {
+  header: string;
+  parseRatio: number;
+  nonNull: number;
+}
+
+interface SalesCandidate {
+  column: string;
+  nonNull: number;
+  variance: number;
+}
+
+const DATE_NAME_KEYWORDS = [
+  "date",
+  "time",
+  "day",
+  "invoice",
+  "order",
+  "created",
+];
+
+const SALES_NAME_KEYWORDS = [
+  "sales",
+  "revenue",
+  "amount",
+  "total",
+  "gmv",
+];
+
+const SALES_REJECT_KEYWORDS = ["person", "name", "id", "code"];
+
+const ROW_SAMPLE_SIZE = 40;
+
+const collectSampleValues = (rows: CsvRow[], column: string) =>
+  rows
+    .slice(0, ROW_SAMPLE_SIZE)
+    .map((row) => (row[column] ?? "").trim())
+    .filter((value) => value.length > 0);
+
+const computeVariance = (numbers: number[]) => {
+  if (!numbers.length) {
+    return 0;
+  }
+  const mean = numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+  const squaredDiffs = numbers.reduce(
+    (acc, value) => acc + (value - mean) ** 2,
+    0
+  );
+  return squaredDiffs / numbers.length;
+};
+
+const detectDateColumnSimple = (headers: string[], rows: CsvRow[]) => {
+  if (!rows.length) {
+    return "";
+  }
+
+  const candidates = headers
+    .map((header) => ({
+      header,
+      normalized: normalizeColumnName(header),
+    }))
+    .filter(({ normalized }) =>
+      DATE_NAME_KEYWORDS.some((keyword) => normalized.includes(keyword))
+    )
+    .map((candidate) => {
+      const values = collectSampleValues(rows, candidate.header);
+      if (!values.length) {
+        return null;
+      }
+      const parseable = values.filter(
+        (value) => !Number.isNaN(Date.parse(value))
+      ).length;
+      const ratio = values.length ? parseable / values.length : 0;
+      return {
+        header: candidate.header,
+        parseRatio: ratio,
+        nonNull: values.length,
+      };
+    })
+    .filter(
+      (entry): entry is DateCandidate =>
+        Boolean(entry && (entry.parseRatio >= 0.5 || entry.nonNull > 0))
+    );
+
+  if (!candidates.length) {
+    return "";
+  }
+
+  candidates.sort((a, b) => {
+    if (b.parseRatio !== a.parseRatio) {
+      return b.parseRatio - a.parseRatio;
+    }
+    return b.nonNull - a.nonNull;
+  });
+
+  return candidates[0].header;
+};
+
+const detectSalesColumnSimple = (headers: string[], rows: CsvRow[]) => {
+  if (!rows.length) {
+    return "";
+  }
+
+  const candidates = headers
+    .map((header) => ({
+      header,
+      normalized: normalizeColumnName(header),
+    }))
+    .filter(({ normalized }) =>
+      SALES_NAME_KEYWORDS.some((keyword) => normalized.includes(keyword))
+    )
+    .filter(
+      ({ normalized }) =>
+        !SALES_REJECT_KEYWORDS.some((keyword) =>
+          normalized.includes(keyword)
+        )
+    )
+    .filter(({ header }) => isNumericColumn(rows, header))
+    .map(({ header }) => {
+      const values = collectSampleValues(rows, header)
+        .map((value) => {
+          const normalized = value.replace(/[^0-9.\-]/g, "");
+          const parsed = Number(normalized);
+          return Number.isNaN(parsed) ? null : parsed;
+        })
+        .filter((value): value is number => value !== null);
+
+      if (!values.length) {
+        return null;
+      }
+
+      return {
+        column: header,
+        nonNull: values.length,
+        variance: computeVariance(values),
+      };
+    })
+    .filter((entry): entry is SalesCandidate => Boolean(entry));
+
+  if (!candidates.length) {
+    return "";
+  }
+
+  candidates.sort((a, b) => {
+    if (b.nonNull !== a.nonNull) {
+      return b.nonNull - a.nonNull;
+    }
+    return b.variance - a.variance;
+  });
+
+  return candidates[0].column;
+};
+
+const shouldRejectSalesColumn = (column: string) => {
+  if (!column) {
+    return false;
+  }
+  const normalized = normalizeColumnName(column);
+  return SALES_REJECT_KEYWORDS.some((keyword) =>
+    normalized.includes(normalizeColumnName(keyword))
+  );
+};
+
+const LOCATION_KEYWORDS = [
+  "city",
+  "state",
+  "region",
+  "country",
+  "area",
+  "zone",
+  "location",
+];
+
+type ColumnExpectation = "date" | "numeric" | "id" | "text" | "category" | "any";
+type ConfidenceTone = "high" | "medium" | "low";
+
+interface ConfidenceBadge {
+  label: string;
+  tone: ConfidenceTone;
+}
+
+interface RoleDefinition {
+  id: string;
+  label: string;
+  keywords: string[];
+  expectedType: ColumnExpectation;
+  section: "core" | "product" | "location" | "extra" | "support";
+  helper?: string;
+}
+
+interface ColumnMetrics {
+  nonNullRatio: number;
+  uniquenessScore: number;
+  isNumeric: boolean;
+  isDate: boolean;
+  sampleSize: number;
+}
+
+interface ColumnRoleScore {
+  column: string;
+  score: number;
+  nameMatch: number;
+  dataTypeMatch: number;
+  nonNullRatio: number;
+  uniquenessScore: number;
+  negativeSignals: string[];
+}
+
+const COLUMN_SCORE_WEIGHTS = {
+  name: 0.4,
+  dataType: 0.3,
+  nonNull: 0.2,
+  uniqueness: 0.1,
+};
+
+const FINAL_COLUMN_ROLE_DEFINITIONS: RoleDefinition[] = [
+  {
+    id: "date",
+    label: "Date column",
+    keywords: [
+      "date",
+      "order_date",
+      "transaction_date",
+      "invoice_date",
+      "timestamp",
+      "datetime",
+      "created_at",
+      "day",
+      "sales_date",
+    ],
+    expectedType: "date",
+    section: "core",
+  },
+  {
+    id: "sales",
+    label: "Sales column",
+    keywords: [
+      "sales",
+      "revenue",
+      "amount",
+      "total",
+      "net_sales",
+      "gross_sales",
+      "sales_value",
+      "order_value",
+      "gmv",
+      "booking_value",
+    ],
+    expectedType: "numeric",
+    section: "core",
+  },
+  {
+    id: "product",
+    label: "Product identifier",
+    keywords: ["sku", "product_id", "item_id", "product_code", "product", "product_name"],
+    expectedType: "id",
+    section: "product",
+    helper: "Priority: SKU > Product ID > Product Name",
+  },
+  {
+    id: "sku",
+    label: "SKU / Product ID",
+    keywords: ["sku", "product_sku", "item_id", "product_id", "product_code", "item_code"],
+    expectedType: "id",
+    section: "product",
+  },
+  {
+    id: "productId",
+    label: "Product ID",
+    keywords: ["product id", "productid", "product_id", "item id", "item_id", "itemid"],
+    expectedType: "id",
+    section: "product",
+  },
+  {
+    id: "productName",
+    label: "Product Name",
+    keywords: ["product name", "name", "item", "description", "label"],
+    expectedType: "text",
+    section: "product",
+  },
+  {
+    id: "productCategory",
+    label: "Product Category",
+    keywords: ["category", "product_category", "segment", "type", "class"],
+    expectedType: "category",
+    section: "product",
+  },
+  {
+    id: "store",
+    label: "Store / Store Name",
+    keywords: ["store", "shop", "outlet", "branch"],
+    expectedType: "text",
+    section: "location",
+    helper: "Priority: Store ID > Store Name",
+  },
+  {
+    id: "storeId",
+    label: "Store ID",
+    keywords: ["store id", "store_id", "storeid", "branch_id", "outlet_id"],
+    expectedType: "id",
+    section: "location",
+  },
+  {
+    id: "location",
+    label: "Location reference",
+    keywords: ["location", "address", "site"],
+    expectedType: "text",
+    section: "location",
+  },
+  {
+    id: "region",
+    label: "Region",
+    keywords: ["region", "region name"],
+    expectedType: "text",
+    section: "location",
+  },
+  {
+    id: "city",
+    label: "City",
+    keywords: ["city", "town", "metro", "district"],
+    expectedType: "text",
+    section: "location",
+  },
+  {
+    id: "state",
+    label: "State / Province",
+    keywords: ["state", "province", "state region", "state/region"],
+    expectedType: "text",
+    section: "location",
+  },
+  {
+    id: "country",
+    label: "Country",
+    keywords: ["country", "nation", "country name"],
+    expectedType: "text",
+    section: "location",
+  },
+  {
+    id: "area",
+    label: "Area / Zone",
+    keywords: ["area", "zone", "territory"],
+    expectedType: "text",
+    section: "location",
+  },
+];
+
 const countUniqueValues = (rows: CsvRow[], column?: string) => {
   if (!column) {
     return 0;
@@ -431,6 +1250,115 @@ const countUniqueValues = (rows: CsvRow[], column?: string) => {
     }
   });
   return values.size;
+};
+
+const STORE_ID_KEYWORDS = [
+  "store id",
+  "storeid",
+  "store_id",
+  "branch_id",
+  "branchid",
+  "branch id",
+  "outlet_id",
+  "outletid",
+  "outlet id",
+  "shop_id",
+  "shopid",
+  "shop id",
+  "id",
+];
+
+const STORE_NAME_KEYWORDS = ["store", "shop", "outlet", "branch", "name"];
+const REQUIRED_STORE_ID_UNIQUENESS = 0.55;
+
+const getColumnUniquenessRatio = (rows: CsvRow[], column: string) => {
+  if (!column || !rows.length) {
+    return 0;
+  }
+  const uniqueValues = countUniqueValues(rows, column);
+  return rows.length ? uniqueValues / rows.length : 0;
+};
+
+const detectStoreIdColumnSimple = (headers: string[], rows: CsvRow[]) => {
+  const normalizedHeaders = headers.map((header) => ({
+    header,
+    normalized: normalizeColumnName(header),
+  }));
+
+  const candidates = normalizedHeaders
+    .filter(({ normalized }) =>
+      STORE_ID_KEYWORDS.some((keyword) =>
+        normalized.includes(normalizeColumnName(keyword))
+      )
+    )
+    .map(({ header, normalized }) => ({
+      column: header,
+      normalized,
+      uniqueness: getColumnUniquenessRatio(rows, header),
+    }));
+
+  if (!candidates.length) {
+    return "";
+  }
+
+  candidates.sort((a, b) => {
+    if (b.uniqueness !== a.uniqueness) {
+      return b.uniqueness - a.uniqueness;
+    }
+    return a.column.length - b.column.length;
+  });
+
+  const [best] = candidates;
+  if (best.uniqueness >= REQUIRED_STORE_ID_UNIQUENESS) {
+    return best.column;
+  }
+
+  const fallback = candidates.find((candidate) =>
+    ["store", "branch", "outlet", "shop"].some((keyword) =>
+      candidate.normalized.includes(keyword)
+    )
+  );
+  if (fallback && fallback.uniqueness >= REQUIRED_STORE_ID_UNIQUENESS * 0.6) {
+    return fallback.column;
+  }
+
+  return "";
+};
+
+const detectStoreNameColumnSimple = (
+  headers: string[],
+  rows: CsvRow[],
+  excludedColumns: string[] = []
+) => {
+  const normalizedHeaders = headers.map((header) => ({
+    header,
+    normalized: normalizeColumnName(header),
+  }));
+
+  const candidates = normalizedHeaders
+    .filter(
+      ({ header, normalized }) =>
+        !excludedColumns.includes(header) &&
+        STORE_NAME_KEYWORDS.some((keyword) =>
+          normalized.includes(normalizeColumnName(keyword))
+        )
+    )
+    .filter(({ header }) => !isNumericColumn(rows, header))
+    .map(({ header, normalized }) => ({
+      column: header,
+      score: STORE_NAME_KEYWORDS.reduce(
+        (result, keyword) =>
+          normalized.includes(normalizeColumnName(keyword)) ? result + 1 : result,
+        0
+      ),
+    }));
+
+  if (!candidates.length) {
+    return "";
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0].column;
 };
 
 const buildProductMetric = (
@@ -495,178 +1423,1026 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const [salesColumn, setSalesColumn] = useState("");
   const [productColumn, setProductColumn] = useState("");
   const [storeColumn, setStoreColumn] = useState("");
-  const [priceColumn, setPriceColumn] = useState("");
+  const [dataStoreNameColumn, setDataStoreNameColumn] = useState("");
+  const [dataProductNameColumn, setDataProductNameColumn] = useState("");
+  const [dataProductCategoryColumn, setDataProductCategoryColumn] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const [validationModal, setValidationModal] = useState<ValidationModalInfo | null>(null);
   const [dataSummary, setDataSummary] = useState<DataSummary | null>(null);
   const [previewExpanded, setPreviewExpanded] = useState(false);
-  const [productMapping, setProductMapping] = useState<ProductMappingState>(
-    initialProductMapping
-  );
-  const [storeMapping, setStoreMapping] = useState<StoreMappingState>(initialStoreMapping);
-  const [mappingErrors, setMappingErrors] = useState<string[] | null>(null);
-  const [mappingSuccess, setMappingSuccess] = useState<string | null>(null);
-  const [showSuccessToast, setShowSuccessToast] = useState(false);
-  const [enhanceConfirmed, setEnhanceConfirmed] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [fileSizeLabel, setFileSizeLabel] = useState<string | null>(null);
-  const [workflowUnlocked, setWorkflowUnlocked] = useState(false);
+  const [uploadError, setUploadError] = useState<UploadErrorType>(null);
+  const [selectedAdditionalFeatures, setSelectedAdditionalFeatures] = useState<string[]>([]);
+  const [selectedLocationColumns, setSelectedLocationColumns] = useState<string[]>([]);
   const [isDropzoneActive, setIsDropzoneActive] = useState(false);
-  const [unsupportedFileAttempted, setUnsupportedFileAttempted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [forecastGranularity, setForecastGranularity] = useState("Weekly");
+  const [forecastDurationDays, setForecastDurationDays] = useState(15);
+  const [forecastRequested, setForecastRequested] = useState(false);
+  const [heroAlert, setHeroAlert] = useState<string | null>(null);
+  const [analysisResults, setAnalysisResults] = useState<AnalysisResults | null>(null);
+  const [demandInsightModal, setDemandInsightModal] = useState<DemandInsightModalInfo | null>(null);
+  const [dataCoverageDays, setDataCoverageDays] = useState<number | null>(null);
+  const [maxForecastDays, setMaxForecastDays] = useState<number | null>(null);
+  const [forecastLevel, setForecastLevel] = useState<ForecastLevel>("overall");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedProductKey, setSelectedProductKey] = useState("");
+  const [locationSelections, setLocationSelections] = useState<Record<string, string>>({});
+  const [lastConfirmedData, setLastConfirmedData] =
+    useState<{ cleaned: CsvRow[]; mapping: DataMapping } | null>(null);
+  const [overallForecastSection, setOverallForecastSection] =
+    useState<ForecastSection | null>(null);
 
-  const togglePreview = () => {
-    setPreviewExpanded((prev) => !prev);
+  const productMetadata = analysisResults?.productMetadata ?? {};
+  const orderedProductKeys = useMemo(() => {
+    const demandTypes = getDemandTypes();
+    const seen = new Set<string>();
+    const order: string[] = [];
+    demandTypes.forEach((type) => {
+      const keys =
+        analysisResults?.productDemandAnalysis?.groupsByType[type] ?? [];
+      keys.forEach((key) => {
+        if (!seen.has(key)) {
+          seen.add(key);
+          order.push(key);
+        }
+      });
+    });
+    return order;
+  }, [analysisResults?.productDemandAnalysis]);
+
+  const productCategoryOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: string[] = [];
+    orderedProductKeys.forEach((key) => {
+      const category = productMetadata[key]?.productCategory;
+      if (category && !seen.has(category)) {
+        seen.add(category);
+        options.push(category);
+      }
+    });
+    return options;
+  }, [orderedProductKeys, productMetadata]);
+
+  const productOptions = useMemo(() => {
+    return orderedProductKeys
+      .filter((key) =>
+        selectedCategory
+          ? (productMetadata[key]?.productCategory ?? "") === selectedCategory
+          : true
+      )
+      .map((key) => {
+        const metadata = productMetadata[key] ?? {};
+        const displayLabel = metadata.productName
+          ? `${metadata.productName} (${metadata.productId ?? key})`
+          : metadata.productId ?? key;
+        return {
+          key,
+          label: displayLabel,
+        };
+      });
+  }, [orderedProductKeys, productMetadata, selectedCategory]);
+
+  const findColumnForKeywords = (keywords: string[]) => {
+    const normalizedKeywords = keywords.map((keyword) =>
+      normalizeColumnName(keyword)
+    );
+    return columns.find((column) => {
+      const normalized = normalizeColumnName(column);
+      return normalizedKeywords.some((keyword) => normalized.includes(keyword));
+    });
   };
+
+  const locationFieldConfig = useMemo(() => {
+    return LOCATION_FIELD_PRIORITY.map((field) => {
+      const column = findColumnForKeywords(field.keywords);
+      return column ? { ...field, column } : null;
+    }).filter(
+      (entry): entry is (typeof LOCATION_FIELD_PRIORITY)[number] & { column: string } =>
+        Boolean(entry)
+    );
+  }, [columns]);
+
+  const locationOptionsByField = useMemo(() => {
+    const rowsSource = cleanedRows.length ? cleanedRows : rawRows;
+    const result: Record<string, string[]> = {};
+    locationFieldConfig.forEach((field) => {
+      const seen = new Set<string>();
+      const values: string[] = [];
+      rowsSource.forEach((row) => {
+        const value = (row[field.column] ?? "").trim();
+        if (value && !seen.has(value)) {
+          seen.add(value);
+          values.push(value);
+        }
+      });
+      result[field.key] = values;
+    });
+    return result;
+  }, [locationFieldConfig, cleanedRows, rawRows]);
+
+  useEffect(() => {
+    setSelectedCategory("");
+    setSelectedProductKey("");
+  }, [orderedProductKeys.length]);
+
+  useEffect(() => {
+    setLocationSelections((prev) => {
+      const next: Record<string, string> = {};
+      locationFieldConfig.forEach((field) => {
+        if (prev[field.key]) {
+          next[field.key] = prev[field.key];
+        }
+      });
+      return next;
+    });
+  }, [locationFieldConfig]);
+
+  useEffect(() => {
+    if (!selectedProductKey && productOptions.length) {
+      setSelectedProductKey(productOptions[0].key);
+    }
+  }, [productOptions, selectedProductKey]);
+
+  const updateLocationSelection = (fieldKey: string, value: string) => {
+    setLocationSelections((prev) => ({
+      ...prev,
+      [fieldKey]: value,
+    }));
+  };
+
+  const columnStats = useMemo(() => {
+    const statsMap: Record<string, ColumnMetrics> = {};
+    if (!columns.length || !rawRows.length) {
+      return statsMap;
+    }
+    columns.forEach((column) => {
+      const sampleRows = rawRows.slice(0, ROW_SAMPLE_SIZE);
+      const values = sampleRows.map((row) => (row[column] ?? "").trim());
+      const nonNullValues = values.filter(Boolean);
+      const ratio = values.length ? nonNullValues.length / values.length : 0;
+      const uniqueCount = new Set(nonNullValues).size;
+      statsMap[column] = {
+        nonNullRatio: ratio,
+        uniquenessScore: nonNullValues.length
+          ? Math.min(1, uniqueCount / nonNullValues.length)
+          : 0,
+        isNumeric: isNumericColumn(rawRows, column),
+        isDate: isDateColumn(rawRows, column),
+        sampleSize: values.length,
+      };
+    });
+    return statsMap;
+  }, [columns, rawRows]);
+
+  const detectionResults = useMemo(() => {
+    const results: Record<string, ColumnRoleScore[]> = {};
+    FINAL_COLUMN_ROLE_DEFINITIONS.forEach((role) => {
+      results[role.id] = [];
+    });
+    columns.forEach((column) => {
+      const stats = columnStats[column];
+      if (!stats) {
+        return;
+      }
+      FINAL_COLUMN_ROLE_DEFINITIONS.forEach((role) => {
+        const nameMatch = calculateNameMatchScore(column, role.keywords);
+        const dataTypeMatch = calculateDataTypeMatchScore(stats, role.expectedType);
+        const score = calculateColumnScore({
+          nameMatch,
+          dataTypeMatch,
+          nonNullRatio: stats.nonNullRatio,
+          uniquenessScore: stats.uniquenessScore,
+        });
+        results[role.id].push({
+          column,
+          score,
+          nameMatch,
+          dataTypeMatch,
+          nonNullRatio: stats.nonNullRatio,
+          uniquenessScore: stats.uniquenessScore,
+          negativeSignals: getNegativeSignalsForRole(role.id, stats),
+        });
+      });
+    });
+    Object.values(results).forEach((list) => list.sort((a, b) => b.score - a.score));
+    return results;
+  }, [columns, columnStats]);
+
+  const renderRoleField = (
+    roleId: string,
+    value: string,
+    setter: (column: string) => void,
+    label: string,
+    helper?: string
+  ) => {
+    const roleScores = detectionResults[roleId] ?? [];
+    const autoDetected = roleScores[0];
+    const selected =
+      value && roleScores.length
+        ? roleScores.find((entry) => entry.column === value) ?? autoDetected
+        : autoDetected;
+    return (
+      <label className="mapping-column final-column">
+        <div className="mapping-column-header">
+          <span>{label}</span>
+          {helper ? <small className="mapping-helper">{helper}</small> : null}
+        </div>
+        <select
+          value={value}
+          onChange={(event) => setter(event.target.value)}
+          disabled={!columns.length}
+        >
+          <option value="">Not Available</option>
+          {columns.map((column) => (
+            <option key={`${roleId}-${column}`} value={column}>
+              {column}
+            </option>
+          ))}
+        </select>
+      </label>
+  );
+};
+
+const renderDemandList = (
+  analysis: DemandAnalysisResult,
+  keyPrefix: string,
+  onView: (type: DemandType) => void
+) => {
+  const demandTypes = getDemandTypes();
+  const visibleTypes = demandTypes.filter(
+    (type) => (analysis.counts[type] ?? 0) > 0
+  );
+  if (!visibleTypes.length) {
+    return null;
+  }
+  return (
+    <ul className="demand-summary-list">
+      {visibleTypes.map((type) => (
+        <li key={`${keyPrefix}-${type}`}>
+          <div className="demand-summary-row">
+            <span>{type}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <strong>{analysis.counts[type]}</strong>
+              <button
+                type="button"
+                className="demand-summary-link"
+                onClick={() => onView(type)}
+              >
+                View
+              </button>
+            </div>
+          </div>
+          <small className="demand-summary-note">{DEMAND_EXPLANATIONS[type]}</small>
+        </li>
+      ))}
+    </ul>
+  );
+};
+
+const parseSalesValue = (value: string | undefined): number | null => {
+  if (!value) {
+    return null;
+  }
+  const cleaned = value.replace(/[^0-9.\-]/g, "");
+  if (!cleaned) {
+    return null;
+  }
+  const parsed = Number(cleaned);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const detectSeasonalPattern = (series: number[]): boolean => {
+  if (series.length < 24) {
+    return false;
+  }
+  const cycleLengths = [7, 14, 28, 30];
+  const mean =
+    series.reduce((sum, value) => sum + value, 0) / (series.length || 1);
+
+  if (mean === 0) {
+    return false;
+  }
+
+  for (const cycle of cycleLengths) {
+    if (series.length < cycle * 2) {
+      continue;
+    }
+    const patternSums = new Array(cycle).fill(0);
+    const patternCounts = new Array(cycle).fill(0);
+    series.forEach((value, index) => {
+      const position = index % cycle;
+      patternSums[position] += value;
+      patternCounts[position] += 1;
+    });
+
+    const patternAverages = patternSums.map((sum, index) =>
+      patternCounts[index] ? sum / patternCounts[index] : 0
+    );
+
+    const rmse = Math.sqrt(
+      series.reduce((acc, value, index) => {
+        const expected = patternAverages[index % cycle];
+        return acc + (value - expected) ** 2;
+      }, 0) / series.length
+    );
+
+    const normalizedError = rmse / Math.abs(mean);
+    if (normalizedError <= 0.15) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const classifyDemand = (series: number[]): DemandType => {
+  const length = series.length;
+  const mean = length
+    ? series.reduce((sum, value) => sum + value, 0) / length
+    : 0;
+  const variance = length
+    ? series.reduce((sum, value) => sum + (value - mean) ** 2, 0) / length
+    : 0;
+  const std = Math.sqrt(variance);
+  const cv = mean !== 0 ? std / mean : 0;
+  const zeroRatio = length
+    ? series.filter((value) => value === 0).length / length
+    : 0;
+
+  if (length < 20) {
+    return "New";
+  }
+  if (zeroRatio >= 0.4) {
+    return "Intermittent";
+  }
+  if (cv <= 0.5) {
+    return "Smooth";
+  }
+  const classification: DemandType = "Erratic";
+  if (detectSeasonalPattern(series)) {
+    return "Seasonal";
+  }
+  return classification;
+};
+
+const buildFeatureStore = (
+  rows: CsvRow[],
+  mapping: {
+    dateColumn: string;
+    salesColumn: string;
+    productColumn: string;
+    storeColumn: string;
+    dataProductNameColumn: string;
+    dataProductCategoryColumn: string;
+    dataStoreNameColumn: string;
+  },
+  selectedLocationColumns: string[]
+): FeatureStore | null => {
+  if (!mapping.salesColumn || !mapping.dateColumn) {
+    return null;
+  }
+
+  const demandSeries: Record<string, number[]> = {};
+  const products = new Set<string>();
+  const stores = new Set<string>();
+  let firstTimestamp: number | null = null;
+  let lastTimestamp: number | null = null;
+  const productMetadata: Record<string, ProductMetadata> = {};
+
+  const addToSeries = (prefix: "product" | "location", key: string, value: number) => {
+    const seriesKey = `${prefix}:${key}`;
+    if (!demandSeries[seriesKey]) {
+      demandSeries[seriesKey] = [];
+    }
+    demandSeries[seriesKey].push(value);
+  };
+
+  const sanitizeProductValue = (value?: string) => {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const lower = trimmed.toLowerCase();
+    if (lower === "unknown" || lower === "unknown product") {
+      return undefined;
+    }
+    return trimmed;
+  };
+
+  rows.forEach((row) => {
+    const salesValue = parseSalesValue(row[mapping.salesColumn]);
+    if (salesValue === null) {
+      return;
+    }
+    const dateValue = row[mapping.dateColumn];
+    if (!dateValue) {
+      return;
+    }
+    const parsedDate = new Date(dateValue);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return;
+    }
+
+    const productKey = getProductGroupKey(row, {
+      productColumn: mapping.productColumn,
+      dataProductNameColumn: mapping.dataProductNameColumn,
+      dataProductCategoryColumn: mapping.dataProductCategoryColumn,
+    });
+    const locationKey = getLocationGroupKey(row, {
+      storeColumn: mapping.storeColumn,
+      dataStoreNameColumn: mapping.dataStoreNameColumn,
+      selectedLocationColumns,
+    });
+
+    const addProductMetadata = (key: keyof ProductMetadata, value?: string) => {
+      const cleanValue = sanitizeProductValue(value);
+      if (!productMetadata[productKey]) {
+        productMetadata[productKey] = {};
+      }
+      if (cleanValue && !productMetadata[productKey][key]) {
+        productMetadata[productKey][key] = cleanValue;
+      }
+    };
+    addProductMetadata("productId", row[mapping.productColumn]);
+    addProductMetadata("productName", row[mapping.dataProductNameColumn]);
+    addProductMetadata("productCategory", row[mapping.dataProductCategoryColumn]);
+
+    addToSeries("product", productKey, salesValue);
+    addToSeries("location", locationKey, salesValue);
+
+    products.add(productKey);
+    stores.add(locationKey);
+
+    const timestamp = parsedDate.getTime();
+    if (firstTimestamp === null || timestamp < firstTimestamp) {
+      firstTimestamp = timestamp;
+    }
+    if (lastTimestamp === null || timestamp > lastTimestamp) {
+      lastTimestamp = timestamp;
+    }
+  });
+
+  const dateRange =
+    firstTimestamp !== null && lastTimestamp !== null
+      ? `${new Date(firstTimestamp).toISOString().split("T")[0]} → ${new Date(
+          lastTimestamp
+        ).toISOString().split("T")[0]}`
+      : "";
+
+  return {
+    demandSeries,
+    metadata: {
+      products: Array.from(products),
+      stores: Array.from(stores),
+      dateRange,
+    },
+    productMetadata,
+  };
+};
+
+const analysisEngine = (store: FeatureStore): AnalysisResults => {
+  const analyze = (prefix: "product" | "location"): DemandAnalysisResult => {
+    const result = createEmptyDemandAnalysis();
+    Object.entries(store.demandSeries).forEach(([key, series]) => {
+      if (!key.startsWith(`${prefix}:`) || !series.length) {
+        return;
+      }
+      result.totalGroups += 1;
+      const classification = classifyDemand(series);
+      result.counts[classification] += 1;
+      const keyLabel = key.startsWith(`${prefix}:`)
+        ? key.slice(prefix.length + 1)
+        : key;
+      result.groupsByType[classification].push(keyLabel || "Unknown");
+    });
+    return result;
+  };
+
+  return {
+    productDemandAnalysis: analyze("product"),
+    locationDemandAnalysis: analyze("location"),
+    productMetadata: store.productMetadata,
+  };
+};
+
+const decisionLayer = (
+  store: FeatureStore,
+  fallbackTimeRange?: string
+): DecisionInsights => {
+  const { metadata } = store;
+  const heroNotes: string[] = [];
+  if (!metadata.products.length) {
+    heroNotes.push("Product identifiers could not be inferred.");
+  }
+  if (!metadata.stores.length) {
+    heroNotes.push("Store identifiers could not be inferred.");
+  }
+
+  return {
+    timeRange: metadata.dateRange || fallbackTimeRange,
+    heroAlert: heroNotes.length ? heroNotes.join(" ") : undefined,
+  };
+};
+
+const getProductGroupKey = (
+  row: CsvRow,
+  mapping: {
+    productColumn: string;
+    dataProductNameColumn: string;
+    dataProductCategoryColumn: string;
+  }
+) => {
+  if (mapping.productColumn && row[mapping.productColumn]) {
+    return row[mapping.productColumn];
+  }
+  if (mapping.dataProductNameColumn && row[mapping.dataProductNameColumn]) {
+    return row[mapping.dataProductNameColumn];
+  }
+  if (mapping.dataProductCategoryColumn && row[mapping.dataProductCategoryColumn]) {
+    return row[mapping.dataProductCategoryColumn];
+  }
+  return "Unknown Product";
+};
+
+const getLocationGroupKey = (
+  row: CsvRow,
+  mapping: {
+    storeColumn: string;
+    dataStoreNameColumn: string;
+    selectedLocationColumns: string[];
+  }
+) => {
+  if (mapping.storeColumn && row[mapping.storeColumn]) {
+    return row[mapping.storeColumn];
+  }
+  if (mapping.dataStoreNameColumn && row[mapping.dataStoreNameColumn]) {
+    return row[mapping.dataStoreNameColumn];
+  }
+  if (mapping.selectedLocationColumns.length) {
+    for (const column of mapping.selectedLocationColumns) {
+      if (row[column]) {
+        return row[column];
+      }
+    }
+    const fallbackColumn = mapping.selectedLocationColumns[0];
+    if (fallbackColumn) {
+      return row[fallbackColumn] || "Unknown Location";
+    }
+  }
+  return "Unknown Location";
+};
+
+const formatPercent = (value: number) => {
+  const formatted = value.toFixed(1);
+  if (formatted.endsWith(".0")) {
+    return `${formatted.slice(0, -2)}%`;
+  }
+  return `${formatted}%`;
+};
+
+const getTimeRangeLabel = (rows: CsvRow[], column: string) => {
+  if (!rows.length || !column) {
+    return null;
+  }
+  const startValue = rows[0][column];
+  const endValue = rows[rows.length - 1][column];
+  if (!startValue || !endValue) {
+    return null;
+  }
+  const startDate = new Date(startValue);
+  const endDate = new Date(endValue);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return null;
+  }
+  const format = (date: Date) =>
+    date.toLocaleString("en-US", { month: "short", year: "numeric" });
+  return `${format(startDate)} → ${format(endDate)}`;
+};
+
+const categorizeMissingLevel = (missingRatio: number) => {
+  if (missingRatio < CONFIG.MISSING_THRESHOLDS.LOW) {
+    return "Low";
+  }
+  if (missingRatio < CONFIG.MISSING_THRESHOLDS.HIGH) {
+    return "Moderate";
+  }
+  return "High";
+};
+
+const togglePreview = () => {
+  setPreviewExpanded((prev) => !prev);
+};
 
   const previewRows = rawRows.slice(0, 5);
   const hasParsedData = Boolean(columns.length && rawRows.length);
+  const uploadErrorMessage =
+    uploadError === "unsupported"
+      ? "Unsupported file format"
+      : uploadError === "empty"
+        ? "Empty File is not Supported"
+        : uploadError === "corrupt"
+          ? "File Uploaded is corrupt"
+          : uploadError === "tooLarge"
+            ? FILE_TOO_LARGE_MESSAGE
+            : null;
 
   const buildCurrentMapping = (): DataMapping => ({
     dateColumn,
     salesColumn,
     productColumn,
     storeColumn,
-    priceColumn,
   });
 
-  const clearUploadedFile = () => {
+  const matchesLocationKeyword = (column: string) => {
+    const normalized = normalizeColumnName(column);
+    return LOCATION_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  };
+
+  const locationColumnCandidates = useMemo(
+    () => columns.filter(matchesLocationKeyword),
+    [columns]
+  );
+
+  useEffect(() => {
+    setSelectedLocationColumns(locationColumnCandidates);
+  }, [locationColumnCandidates]);
+
+  const usedLocationColumns = Array.from(
+    new Set([...locationColumnCandidates, ...selectedLocationColumns])
+  );
+
+  const assignedColumnsForAdditional = new Set(
+    [
+      dateColumn,
+      salesColumn,
+      productColumn,
+      storeColumn,
+      dataStoreNameColumn,
+      dataProductNameColumn,
+      dataProductCategoryColumn,
+      ...usedLocationColumns,
+    ].filter(Boolean)
+  );
+  const additionalColumns = columns.filter(
+    (column) => column && !assignedColumnsForAdditional.has(column)
+  );
+
+  const IMPORTANT_ADDITIONAL_KEYWORDS = ["price", "discount", "promo", "cost"];
+  const recommendedImportantColumns = useMemo(
+    () =>
+      additionalColumns
+        .filter((column) =>
+          IMPORTANT_ADDITIONAL_KEYWORDS.some((keyword) =>
+            normalizeColumnName(column).includes(keyword)
+          )
+        )
+        .slice(0, 3),
+    [additionalColumns]
+  );
+
+  const productDemandAnalysis =
+    analysisResults?.productDemandAnalysis ?? createEmptyDemandAnalysis();
+  
+  const locationDemandAnalysis =
+    analysisResults?.locationDemandAnalysis ?? createEmptyDemandAnalysis();
+
+  const availableDataDays = dataCoverageDays ?? 0;
+  const availableTimeGroupingOptions = useMemo(
+    () => TIME_GROUPING_OPTIONS.filter((option) => forecastDurationDays >= option.minDays),
+    [forecastDurationDays],
+  );
+  useEffect(() => {
+    if (!availableTimeGroupingOptions.length) {
+      return;
+    }
+    if (
+      availableTimeGroupingOptions.every(
+        (option) => option.value !== forecastGranularity
+      )
+    ) {
+      setForecastGranularity(availableTimeGroupingOptions[0].value);
+    }
+  }, [availableTimeGroupingOptions, forecastGranularity]);
+  const timeGroupingHelperText = forecastDurationDays
+    ? availableTimeGroupingOptions.length
+      ? `${availableTimeGroupingOptions
+          .map((option) => option.label)
+          .join(", ")} unlocked by a ${forecastDurationDays}-day forecast.`
+      : `Need at least ${MIN_DURATION_FOR_GROUPING} forecast days to unlock a grouping.`
+    : "Select a forecast duration to unlock grouping options.";
+
+  const visibleForecastDurations = useMemo(
+    () =>
+      maxForecastDays
+        ? FORECAST_DURATION_OPTIONS.filter((option) => option.value <= maxForecastDays)
+        : FORECAST_DURATION_OPTIONS,
+    [maxForecastDays],
+  );
+
+  useEffect(() => {
+    if (!visibleForecastDurations.length) {
+      return;
+    }
+    if (
+      visibleForecastDurations.every((option) => option.value !== forecastDurationDays)
+    ) {
+      setForecastDurationDays(visibleForecastDurations[0].value);
+    }
+  }, [visibleForecastDurations, forecastDurationDays]);
+
+  useEffect(() => {
+    if (!lastConfirmedData) {
+      setOverallForecastSection(null);
+      return;
+    }
+    const section = generateOverallMovingAverageForecast(
+      lastConfirmedData.cleaned,
+      {
+        dateColumn: lastConfirmedData.mapping.dateColumn,
+        salesColumn: lastConfirmedData.mapping.salesColumn,
+      },
+      { windowSize: 7, forecastDurationDays },
+    );
+    setOverallForecastSection(section);
+  }, [forecastDurationDays, lastConfirmedData]);
+
+  const forecastDurationHelperText = maxForecastDays
+    ? `Historical coverage (${availableDataDays} day${availableDataDays === 1 ? "" : "s"}) supports forecasting up to ${maxForecastDays} day${maxForecastDays === 1 ? "" : "s"}.`
+    : "Clean the data to unlock forecast durations.";
+  const forecastTablePreview = overallForecastSection?.table.slice(0, 10) ?? [];
+  const extraForecastRows = Math.max(
+    0,
+    (overallForecastSection?.table.length ?? 0) - forecastTablePreview.length
+  );
+  const formatForecastValue = (value: number) =>
+    value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const handleExportDemandIntelligence = () => {
+    if (!productDemandAnalysis.totalGroups) {
+      return;
+    }
+    const productMetadata = analysisResults?.productMetadata ?? {};
+    const exportRows: string[][] = [];
+    const demandTypes = getDemandTypes();
+    demandTypes.forEach((type) => {
+      const productKeys = productDemandAnalysis.groupsByType[type] ?? [];
+      productKeys.forEach((productKey) => {
+        const metadata = productMetadata[productKey] ?? {};
+        exportRows.push([
+          metadata.productId ?? productKey,
+          metadata.productName ?? "",
+          metadata.productCategory ?? "",
+          type,
+        ]);
+      });
+    });
+    const rows = [
+      ["Product ID/SKU", "Product Name", "Product Category", "Demand Type"],
+      ...exportRows,
+    ];
+    const quoteValue = (value: string) =>
+      `"${(value ?? "").replace(/"/g, '""')}"`;
+    const csvContent = rows
+      .map((row) => row.map((value) => quoteValue(value)).join(","))
+      .join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "demand-intelligence.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleViewDemandType = (
+    type: DemandType,
+    source: "product" | "location"
+  ) => {
+    const analysis =
+      source === "product" ? productDemandAnalysis : locationDemandAnalysis;
+    const products = analysis.groupsByType[type] ?? [];
+    const { visible, remaining } = getPreviewProducts(products);
+    const label = source === "product" ? "Products" : "Locations";
+    setDemandInsightModal({
+      title: `${type} ${label}`,
+      list: visible,
+      more: remaining > 0 ? `+${remaining} more...` : null,
+    });
+  };
+
+  useEffect(() => {
+    setSelectedAdditionalFeatures((prev) => {
+      const filtered = prev.filter((column) => additionalColumns.includes(column));
+      if (filtered.length) {
+        return filtered;
+      }
+      return recommendedImportantColumns;
+    });
+  }, [additionalColumns, recommendedImportantColumns]);
+
+  const clearUploadedFile = (options?: ClearUploadedFileOptions) => {
     setUploadedFileName(null);
     setFileSizeLabel(null);
     setColumns([]);
     // previewRows derived from rawRows, no need to reset separately
     setRawRows([]);
     setCleanedRows([]);
-    setStatusMessage(null);
+    setAnalysisResults(null);
+    if (!options?.keepStatus) {
+      setStatusMessage(null);
+    }
     setDateColumn("");
     setSalesColumn("");
     setProductColumn("");
     setStoreColumn("");
-    setPriceColumn("");
+    setDataStoreNameColumn("");
+    setDataProductNameColumn("");
+    setDataProductCategoryColumn("");
+    setDataCoverageDays(null);
+    setMaxForecastDays(null);
     setIsValidating(false);
     setValidationModal(null);
     setDataSummary(null);
     setPreviewExpanded(false);
-    setMappingSuccess(null);
-    setEnhanceConfirmed(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-    setWorkflowUnlocked(false);
+    setSelectedAdditionalFeatures([]);
     setIsDropzoneActive(false);
-    setUnsupportedFileAttempted(false);
+    setUploadError(options?.nextError ?? null);
+    setHeroAlert(null);
+    setForecastRequested(false);
   };
 
-  const handleDropzoneClick = (event: MouseEvent<HTMLLabelElement>) => {
-    if (uploadedFileName) {
-      event.preventDefault();
+  const swallowLargeFileError = (error: unknown) => {
+    if (error instanceof Error && error.message === FILE_TOO_LARGE_MESSAGE) {
+      return;
     }
+    throw error;
   };
 
   const handleBrowseAgain = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    setUploadError(null);
+    setStatusMessage(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
       fileInputRef.current.click();
     }
   };
 
+  const toggleAdditionalFeature = (column: string) => {
+    setSelectedAdditionalFeatures((prev) => {
+      if (prev.includes(column)) {
+        return prev.filter((value) => value !== column);
+      }
+      return [...prev, column];
+    });
+  };
+
+  const handleGenerateForecast = () => {
+    setForecastRequested(true);
+  };
+
+  const toggleLocationColumn = (column: string) => {
+    setSelectedLocationColumns((prev) =>
+      prev.includes(column) ? prev.filter((value) => value !== column) : [...prev, column]
+    );
+  };
+
   const processForecastFile = (file: File) => {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      clearUploadedFile({ nextError: "tooLarge", keepStatus: true });
+      setStatusMessage(null);
+      throw new Error(FILE_TOO_LARGE_MESSAGE);
+    }
+
+    if (file.type && !VALID_UPLOAD_TYPES.includes(file.type)) {
+      clearUploadedFile({ nextError: "unsupported", keepStatus: true });
+      setStatusMessage("Unsupported file type");
+      throw new Error("Unsupported file type");
+    }
+
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
     if (!supportedForecastExtensions.has(extension)) {
+      clearUploadedFile({ nextError: "unsupported", keepStatus: true });
       setStatusMessage(null);
-      setUnsupportedFileAttempted(true);
       return;
     }
 
-    setUnsupportedFileAttempted(false);
-
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setStatusMessage("File size exceeds 50 MB. Please upload a smaller file.");
-      return;
-    }
+    setUploadError(null);
+    setStatusMessage(null);
 
     const processCsv = (content: string) => {
-      const parsed = parseCsvPreview(content, 6);
-      if (!parsed) {
-        setStatusMessage("The file looks empty. Upload a CSV with headers and rows.");
-        return;
+      try {
+        const parsed = parseCsvPreview(content, 6);
+        if (!parsed || !parsed.headers.length || !parsed.rawRows.length) {
+          clearUploadedFile({ nextError: "empty", keepStatus: true });
+          setStatusMessage("Empty File is not Supported");
+          return;
+        }
+
+        if (parsed.rawRows.length < 5 || parsed.headers.length < 2) {
+          setValidationModal({
+            title: "Dataset too small",
+            message: DATASET_TOO_SMALL_ERROR,
+            bullets: [DATASET_TOO_SMALL_BULLET],
+          });
+          setStatusMessage(DATASET_TOO_SMALL_ERROR);
+          setHeroAlert(null);
+          return;
+        }
+
+        const datasetLarge = parsed.rawRows.length > 200000;
+        const heroWarning =
+          datasetLarge
+            ? LARGE_DATASET_WARNING
+            : parsed.headers.length > 100
+              ? LARGE_COLUMN_WARNING
+              : null;
+        if (heroWarning) {
+          setHeroAlert(heroWarning);
+        } else {
+          setHeroAlert(null);
+        }
+
+        const detectedDateColumn =
+          detectDateColumnSimple(parsed.headers, parsed.rawRows) ||
+          pickColumn(parsed.headers, detectionKeywords.date);
+        const fallbackSalesColumn = pickColumn(parsed.headers, detectionKeywords.sales);
+        const detectedSalesColumn =
+          detectSalesColumnSimple(parsed.headers, parsed.rawRows) ||
+          (shouldRejectSalesColumn(fallbackSalesColumn) ? "" : fallbackSalesColumn);
+        const detectedProductColumn = pickColumn(
+          parsed.headers,
+          PRODUCT_ID_KEYWORDS
+        );
+        const detectedStoreColumn =
+          detectStoreIdColumnSimple(parsed.headers, parsed.rawRows) ||
+          pickColumn(parsed.headers, detectionKeywords.storeId) ||
+          pickColumn(parsed.headers, detectionKeywords.storeGeneral);
+        const detectedStoreNameColumn =
+          detectStoreNameColumnSimple(parsed.headers, parsed.rawRows, [
+            detectedStoreColumn,
+          ]) ||
+          pickColumn(parsed.headers, detectionKeywords.storeName);
+        const detectedProductNameColumn = pickColumn(
+          parsed.headers,
+          PRODUCT_NAME_KEYWORDS
+        );
+
+        setColumns(parsed.headers);
+        setRawRows(parsed.rawRows);
+        setDateColumn(detectedDateColumn);
+        setSalesColumn(detectedSalesColumn);
+        setProductColumn(detectedProductColumn);
+        setStoreColumn(detectedStoreColumn);
+        setDataStoreNameColumn(detectedStoreNameColumn);
+        setDataProductNameColumn(detectedProductNameColumn);
+        setDataProductCategoryColumn(
+          pickColumn(parsed.headers, PRODUCT_CATEGORY_KEYWORDS)
+        );
+        setUploadedFileName(file.name);
+        setFileSizeLabel(formatFileSize(file.size));
+        setCleanedRows([]);
+        setDataSummary(null);
+        setValidationModal(null);
+        setUploadError(null);
+        const parsedStatusMessage =
+          heroWarning ?? "Parsed the uploaded data. Please confirm column mapping below.";
+        setStatusMessage(parsedStatusMessage);
+      } catch {
+        clearUploadedFile({ nextError: "corrupt", keepStatus: true });
+        setStatusMessage("File Uploaded is corrupt");
       }
-
-      const detectedDateColumn = pickColumn(parsed.headers, [
-        "date",
-        "month",
-        "day",
-        "time",
-        "period",
-      ]);
-      const detectedSalesColumn = pickColumn(parsed.headers, [
-        "sales",
-        "units",
-        "quantity",
-        "qty",
-        "volume",
-        "demand",
-        "revenue",
-        "amount",
-      ]);
-      const detectedProductColumn = pickColumn(parsed.headers, [
-        "product",
-        "item",
-        "sku",
-        "category",
-        "name",
-      ]);
-      const detectedStoreColumn = pickColumn(parsed.headers, [
-        "store",
-        "location",
-        "branch",
-        "outlet",
-      ]);
-      const detectedPriceColumn = pickColumn(parsed.headers, [
-        "price",
-        "cost",
-        "unit price",
-        "rate",
-        "value",
-      ]);
-
-      setColumns(parsed.headers);
-      setRawRows(parsed.rawRows);
-      setDateColumn(detectedDateColumn);
-      setSalesColumn(detectedSalesColumn);
-      setProductColumn(detectedProductColumn);
-      setStoreColumn(detectedStoreColumn);
-      setPriceColumn(detectedPriceColumn);
-      setUploadedFileName(file.name);
-      setFileSizeLabel(formatFileSize(file.size));
-      setCleanedRows([]);
-      setDataSummary(null);
-      setValidationModal(null);
-      setStatusMessage("Parsed the uploaded data. Please confirm column mapping below.");
-      setWorkflowUnlocked(false);
     };
 
     loadFileAsCsv(file)
       .then(processCsv)
-      .catch((message) => setStatusMessage(message));
+      .catch(() => {
+        clearUploadedFile({ nextError: "corrupt", keepStatus: true });
+        setStatusMessage("File Uploaded is corrupt");
+      });
   };
 
-  const handleDropzoneDragEnter = (event: DragEvent<HTMLLabelElement>) => {
-    event.preventDefault();
-    if (!uploadedFileName) {
+    const handleDropzoneDragEnter = (event: DragEvent<HTMLLabelElement>) => {
+      event.preventDefault();
       setIsDropzoneActive(true);
-    }
-  };
+    };
 
-  const handleDropzoneDragOver = (event: DragEvent<HTMLLabelElement>) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = uploadedFileName ? "none" : "copy";
-    if (!uploadedFileName) {
+    const handleDropzoneDragOver = (event: DragEvent<HTMLLabelElement>) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
       setIsDropzoneActive(true);
-    }
-  };
+    };
 
   const handleDropzoneDragLeave = (event: DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
@@ -680,10 +2456,6 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const handleDropzoneDrop = (event: DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
     setIsDropzoneActive(false);
-    if (uploadedFileName) {
-      return;
-    }
-
     const files = event.dataTransfer?.files;
     if (!files?.length) {
       return;
@@ -694,7 +2466,11 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       return;
     }
 
-    processForecastFile(files[0]);
+    try {
+      processForecastFile(files[0]);
+    } catch (error) {
+      swallowLargeFileError(error);
+    }
   };
 
   const handleConfirmMapping = () => {
@@ -705,11 +2481,13 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
 
     const mapping = buildCurrentMapping();
     setIsValidating(true);
+    setForecastRequested(false);
     setValidationModal(null);
     setDataSummary(null);
     setPreviewExpanded(false);
     setStatusMessage("Validating your data...");
     setCleanedRows([]);
+    setAnalysisResults(null);
 
     const runValidation = () => {
       const missingFields: string[] = [];
@@ -722,13 +2500,73 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
 
       if (missingFields.length) {
         setValidationModal({
-          title: "Required data not found",
-          message: "Please map valid:",
-          bullets: missingFields,
+          title: "Required columns missing",
+          message:
+            "Forecast cannot be generated until the following required fields are mapped:",
+          bullets: missingFields.map((field) => `${field} is required.`),
         });
-        setStatusMessage("Required columns are missing.");
+        setStatusMessage("Cannot generate forecast without required columns.");
         setIsValidating(false);
         return;
+      }
+
+      const selectedColumns = [
+        mapping.dateColumn,
+        mapping.salesColumn,
+        mapping.productColumn,
+        mapping.storeColumn,
+      ].filter(Boolean);
+      if (new Set(selectedColumns).size !== selectedColumns.length) {
+        setValidationModal({
+          title: "Column conflict",
+          message:
+            "Each role must map to a unique column before the forecast can be generated.",
+          bullets: ["Ensure Date, Sales, Product, and Store each point to a different column."],
+        });
+        setStatusMessage("Resolve duplicate column assignments.");
+        setIsValidating(false);
+        return;
+      }
+
+      if (
+        mapping.dateColumn &&
+        mapping.salesColumn &&
+        mapping.dateColumn === mapping.salesColumn
+      ) {
+        setValidationModal({
+          title: "Column conflict",
+          message:
+            "Date and Sales columns cannot be the same because each must represent a different dimension.",
+          bullets: ["Select distinct columns for Date and Sales."],
+        });
+        setStatusMessage("Cannot generate forecast with overlapping columns.");
+        setIsValidating(false);
+        return;
+      }
+
+      const lowQualityColumns: string[] = [];
+      const collectLowCoverage = (column: string, label: string) => {
+        const ratio = columnStats[column]?.nonNullRatio;
+        if (column && ratio !== undefined && ratio < CONFIG.MIN_COVERAGE) {
+          lowQualityColumns.push(label);
+        }
+      };
+      collectLowCoverage(mapping.salesColumn, "Sales");
+      collectLowCoverage(mapping.dateColumn, "Date");
+      const hasLowCoverage = lowQualityColumns.length > 0;
+      if (hasLowCoverage) {
+        const columnListDisplay =
+          lowQualityColumns.length === 1
+            ? lowQualityColumns[0]
+            : lowQualityColumns.join("/");
+        setValidationModal({
+          title: `${columnListDisplay} column${lowQualityColumns.length > 1 ? "s" : ""} have too many missing values`,
+          message: `Forecast needs ${columnListDisplay.toLowerCase()} data in at least 30% of rows.`,
+          bullets: [],
+        });
+        setStatusMessage(
+          `${columnListDisplay} column${lowQualityColumns.length > 1 ? "s" : ""} have many missing values — forecast accuracy may be affected`
+        );
       }
 
       const invalidSales = !isNumericColumn(rawRows, mapping.salesColumn);
@@ -737,67 +2575,160 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       if (invalidSales || invalidDate) {
         setValidationModal({
           title: "Invalid column selection",
-          message: "Please ensure:",
+          message:
+            "Forecast cannot be generated until these columns contain valid data:",
           bullets: [
             "Sales column contains numeric values",
             "Date column contains valid dates",
           ],
         });
-        setStatusMessage("Invalid column selection detected.");
+        setStatusMessage("Cannot generate forecast with invalid columns.");
         setIsValidating(false);
         return;
       }
 
-      const cleaned = cleanForecastData(rawRows, columns, mapping);
-      if (cleaned.length < 30) {
-        setValidationModal({
-          title: "Insufficient data",
-          message: "At least 30 records are required to generate a forecast.",
-          bullets: [],
-        });
-        setStatusMessage("Insufficient data after cleaning.");
-        setIsValidating(false);
-        return;
+      const { rows: cleaned, hasNegativeSales } = cleanForecastData(
+        rawRows,
+        columns,
+        mapping
+      );
+      if (mapping.dateColumn) {
+        cleaned.sort(
+          (a, b) =>
+            new Date(a[mapping.dateColumn]).getTime() -
+            new Date(b[mapping.dateColumn]).getTime()
+        );
       }
+      const salesValues =
+        mapping.salesColumn && cleaned.length
+          ? cleaned
+              .map((row) => {
+                const value = Number(row[mapping.salesColumn]);
+                return Number.isNaN(value) ? null : value;
+              })
+              .filter((value): value is number => value !== null)
+          : [];
+      let hasOutliers = false;
+      if (salesValues.length) {
+        const mean = salesValues.reduce((sum, val) => sum + val, 0) / salesValues.length;
+        const variance =
+          salesValues.reduce((sum, val) => sum + (val - mean) ** 2, 0) /
+          salesValues.length;
+        const stdDev = Math.sqrt(variance);
+        const outliers = stdDev
+          ? salesValues.filter((val) => Math.abs(val - mean) > CONFIG.OUTLIER_SIGMA * stdDev)
+          : salesValues.filter((val) => Math.abs(val - mean) > 0);
+        hasOutliers = outliers.length > 0;
+      }
+      const coverageColumns = [mapping.salesColumn, mapping.dateColumn].filter(Boolean);
+      const coverageRatios = coverageColumns
+        .map((column) => columnStats[column])
+        .filter((stats): stats is ColumnMetrics => Boolean(stats))
+        .map((stats) => stats.nonNullRatio);
+      const coverageForMissing = coverageRatios.length
+        ? Math.min(...coverageRatios)
+        : 1;
+      const missingValuesLabel = categorizeMissingLevel(1 - coverageForMissing);
+      const retentionValue = rawRows.length
+        ? (cleaned.length / rawRows.length) * 100
+        : 0;
+      const dataRetention = formatPercent(retentionValue);
+      const timeRangeLabel =
+        mapping.dateColumn && cleaned.length
+          ? getTimeRangeLabel(cleaned, mapping.dateColumn) ?? undefined
+          : undefined;
+      let coverageDays: number | null = null;
+      if (mapping.dateColumn && cleaned.length) {
+        const startValue = cleaned[0][mapping.dateColumn];
+        const endValue = cleaned[cleaned.length - 1][mapping.dateColumn];
+        if (startValue && endValue) {
+          const startDate = new Date(startValue);
+          const endDate = new Date(endValue);
+          if (
+            !Number.isNaN(startDate.getTime()) &&
+            !Number.isNaN(endDate.getTime())
+          ) {
+            const span =
+              Math.round((endDate.getTime() - startDate.getTime()) / MS_PER_DAY) + 1;
+            coverageDays = Math.max(1, span);
+          }
+        }
+      }
+      const rowsTooSmall = cleaned.length <= CONFIG.MIN_ROWS;
+      const forecastCap =
+        coverageDays !== null ? Math.max(1, Math.floor(coverageDays * 0.5)) : null;
+      setDataCoverageDays(coverageDays);
+      setMaxForecastDays(forecastCap);
 
       const productMetric = buildProductMetric(cleaned, columns, mapping);
       const storeMetric = buildStoreMetric(cleaned, columns, mapping);
+      const featureStorePayload =
+        rowsTooSmall
+          ? null
+          : buildFeatureStore(
+              cleaned,
+              {
+                dateColumn: mapping.dateColumn,
+                salesColumn: mapping.salesColumn,
+                productColumn: mapping.productColumn,
+                storeColumn: mapping.storeColumn,
+                dataProductNameColumn,
+                dataProductCategoryColumn,
+                dataStoreNameColumn,
+              },
+              selectedLocationColumns
+            );
+      const analysisPayload = featureStorePayload
+        ? analysisEngine(featureStorePayload)
+        : null;
+      const insights = featureStorePayload
+        ? decisionLayer(featureStorePayload, timeRangeLabel)
+        : null;
+
+      setAnalysisResults(analysisPayload);
+      setHeroAlert((prev) => {
+        if (prev) {
+          return prev;
+        }
+        return insights?.heroAlert ?? null;
+      });
+      const summaryTimeRange = insights?.timeRange ?? timeRangeLabel;
 
       setCleanedRows(cleaned);
+      const negativeSalesLabel = hasNegativeSales ? "Present" : "No";
+      const outliersLabel = hasOutliers ? "Detected" : "Not Detected";
+      const fallbackStatus = "Not enough data for demand classification";
+      const summaryStatus = rowsTooSmall ? fallbackStatus : "Cleaned & Ready";
+
       setDataSummary({
         fileName: uploadedFileName ?? "Uploaded file",
         rows: cleaned.length,
         columns: columns.length,
         duplicatesRemoved: Math.max(0, rawRows.length - cleaned.length),
-        status: "Ready for forecasting",
+        status: summaryStatus,
+        dataRetention,
+        fileSizeLabel: fileSizeLabel ?? "—",
+        missingValuesLabel,
+        negativeSalesLabel,
+        outliersLabel,
+        ...(summaryTimeRange ? { timeRange: summaryTimeRange } : {}),
         ...(productMetric ? { productMetric } : {}),
         ...(storeMetric ? { storeMetric } : {}),
       });
+      setLastConfirmedData({ cleaned, mapping });
       setPreviewExpanded(false);
-      setStatusMessage("Data cleaned successfully. Ready for forecasting.");
+      const finalStatusMessage = rowsTooSmall
+        ? fallbackStatus
+        : hasNegativeSales
+        ? "Dataset contains negative sales values"
+        : hasOutliers
+        ? "Potential outliers detected in sales data"
+        : "Data cleaned successfully. Ready for forecasting.";
+      setStatusMessage(finalStatusMessage);
       setIsValidating(false);
     };
 
     setTimeout(runValidation, 400);
-  };
-
-  const triggerSuccessMessage = (message: string) => {
-    setMappingErrors(null);
-    setMappingSuccess(message);
-    setShowSuccessToast(true);
-    setEnhanceConfirmed(true);
-  };
-
-  const handleConfirmMappingDetails = () => {
-    triggerSuccessMessage("Now generate your forecast — all ready with input.");
-  };
-
-  const handleSkipMapping = () => {
-    triggerSuccessMessage("Optional data skipped — ready for forecasting.");
-  };
-
-  const closeSuccessToast = () => {
-    setShowSuccessToast(false);
   };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -806,105 +2737,11 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       clearUploadedFile();
       return;
     }
-    processForecastFile(file);
-  };
-
-  const handleProductMappingChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      setProductMapping(initialProductMapping);
-      return;
+    try {
+      processForecastFile(file);
+    } catch (error) {
+      swallowLargeFileError(error);
     }
-
-    const fileSizeLabel = formatFileSize(file.size);
-
-    setProductMapping({
-      ...initialProductMapping,
-      fileName: file.name,
-      fileSize: fileSizeLabel,
-      status: "Parsing product data...",
-    });
-
-    processMappingFile(
-      file,
-      (headers, rows) => {
-        const detection = detectProductColumns(headers);
-        setProductMapping({
-          fileName: file.name,
-          fileSize: fileSizeLabel,
-          headers,
-          rows,
-          status: "Columns detected",
-          idColumn: detection.idColumn,
-          nameColumn: detection.nameColumn,
-        });
-        setMappingErrors(null);
-        setMappingSuccess(null);
-        setEnhanceConfirmed(false);
-      },
-      (message) => {
-        setProductMapping({
-          fileName: file.name,
-          fileSize: fileSizeLabel,
-          headers: [],
-          rows: [],
-          status: message,
-          idColumn: "",
-          nameColumn: "",
-        });
-      }
-    );
-  };
-
-  const handleStoreMappingChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      setStoreMapping(initialStoreMapping);
-      return;
-    }
-
-    const fileSizeLabel = formatFileSize(file.size);
-
-    setStoreMapping({
-      ...initialStoreMapping,
-      fileName: file.name,
-      fileSize: fileSizeLabel,
-      status: "Parsing store data...",
-    });
-
-    processMappingFile(
-      file,
-      (headers, rows) => {
-        const detection = detectStoreColumns(headers);
-        setStoreMapping({
-          fileName: file.name,
-          fileSize: fileSizeLabel,
-          headers,
-          rows,
-          status: "Columns detected",
-          storeIdColumn: detection.storeIdColumn,
-          cityColumn: detection.cityColumn,
-          stateColumn: detection.stateColumn,
-          countryColumn: detection.countryColumn,
-        });
-        setMappingErrors(null);
-        setMappingSuccess(null);
-        setEnhanceConfirmed(false);
-      },
-      (message) => {
-        setStoreMapping({
-          fileName: file.name,
-          fileSize: fileSizeLabel,
-          headers: [],
-          rows: [],
-          status: message,
-          storeIdColumn: "",
-          cityColumn: "",
-          stateColumn: "",
-          countryColumn: "",
-        });
-      }
-    );
   };
 
   return (
@@ -916,263 +2753,378 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
         onNavigate={onNavigate}
       />
 
-      <main className="demand-main" style={{ marginTop: 12 }}>
-        <Header
-          title=" 📈 Generate New Forecast"
-          subtitle="Configure Parameters to run high-fidelity AI prediction models"
-          lastUpdated={lastUpdated}
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          onRefresh={() => setSidebarOpen((prev) => prev)}
-          onMenuClick={() => setSidebarOpen(true)}
-          showHelp
-          showSearch={false}
-        />
-        <div className="demand-content">
-          <div className="forecast-workspace">
-            <section className="forecast-section upload-section">
-              <div className="forecast-section-header">
-                <div>
-                  <h3>Upload &amp; Inspect</h3>
-                </div>
+        <main className="demand-main" style={{ marginTop: 12 }}>
+          <Header
+            title=" 📈 Generate New Forecast"
+            subtitle="Configure Parameters to run high-fidelity AI prediction models"
+            lastUpdated={lastUpdated}
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            onRefresh={() => setSidebarOpen((prev) => prev)}
+            onMenuClick={() => setSidebarOpen(true)}
+            showHelp
+            showSearch={false}
+          />
+            {heroAlert ? (
+              <div className="hero-alert">
+                <span>{heroAlert}</span>
               </div>
-              <p className="forecast-section-subtitle">
-                Drag or select your historical CSV/XLSX. We look for date, sales, product, store, and price columns.
-              </p>
-              <label
-                className={`upload-dropzone ${uploadedFileName ? "has-file" : ""} ${isDropzoneActive ? "drag-active" : ""}`}
-                htmlFor="forecast-upload"
-                onClick={handleDropzoneClick}
-                onDragEnter={handleDropzoneDragEnter}
-                onDragOver={handleDropzoneDragOver}
-                onDragLeave={handleDropzoneDragLeave}
-                onDrop={handleDropzoneDrop}
-              >
-                <input
-                  id="forecast-upload"
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  onChange={handleFileChange}
-                  disabled={Boolean(uploadedFileName)}
-                  ref={fileInputRef}
-                />
-                <div>
-                  {uploadedFileName ? (
-                    <div className="upload-loaded">
-                      <button
-                        type="button"
-                        className="upload-clear"
-                        aria-label="Remove uploaded file"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          clearUploadedFile();
-                        }}
-                      >
-                        ×
-                      </button>
-                      <p className="upload-loaded-name">
-                        Loaded: {uploadedFileName}
-                      </p>
-                      {fileSizeLabel ? (
-                        <p className="upload-loaded-size">{fileSizeLabel}</p>
-                      ) : null}
+            ) : null}
+            <div className="demand-content">
+              <div className="forecast-workspace">
+                <section className="forecast-section upload-section">
+                  <div className="forecast-section-header">
+                    <div>
+                      <h3>Upload &amp; Inspect</h3>
                     </div>
-                  ) : (
-                    unsupportedFileAttempted ? (
-                      <>
-                        <p>Unsupported file format</p>
-                        <p className="upload-secondary">
-                          [Supported formats: CSV (Recommended), Excel (.xlsx, .xls)]
-                        </p>
-                        <p className="upload-secondary">[Max file size: 50MB]</p>
-                        <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+                  </div>
+                  <p className="forecast-section-subtitle">
+                    Drag or select your historical CSV/XLSX. We look for date, sales, product, store, and price columns.
+                  </p>
+                  <label
+                    className={`upload-dropzone ${uploadedFileName ? "has-file" : ""} ${isDropzoneActive ? "drag-active" : ""}`}
+                    htmlFor="forecast-upload"
+                    onDragEnter={handleDropzoneDragEnter}
+                    onDragOver={handleDropzoneDragOver}
+                    onDragLeave={handleDropzoneDragLeave}
+                    onDrop={handleDropzoneDrop}
+                  >
+                    <input
+                      id="forecast-upload"
+                      type="file"
+                      accept=".csv,.xlsx,.xls"
+                      onChange={handleFileChange}
+                      ref={fileInputRef}
+                    />
+                    <div>
+                      {uploadedFileName ? (
+                        <div className="upload-loaded">
                           <button
                             type="button"
-                            className="confirm-mapping demand-cta browse-again"
-                            onClick={handleBrowseAgain}
+                            className="upload-clear"
+                            aria-label="Remove uploaded file"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              clearUploadedFile();
+                            }}
                           >
-                            Browse Again
+                            ×
                           </button>
+                          <p className="upload-loaded-name">
+                            Loaded: {uploadedFileName}
+                          </p>
+                          {fileSizeLabel ? (
+                            <p className="upload-loaded-size">{fileSizeLabel}</p>
+                          ) : null}
                         </div>
-                      </>
-                    ) : (
-                      <>
-                        <p>Drop CSV file here</p>
-                        <p>Or browse files on your system</p>
-                        <p className="upload-secondary">
-                          [Supported formats: CSV (Recommended), Excel (.xlsx, .xls)]
-                        </p>
-                        <p className="upload-secondary">[Max file size: 50MB]</p>
-                      </>
-                    )
-                  )}
-                </div>
-              </label>
-              {statusMessage ? <p className="status-text">{statusMessage}</p> : null}
-              {!workflowUnlocked && columns.length ? (
-                <div className="upload-continue-row">
-                  <button
-                    type="button"
-                    className="confirm-mapping demand-cta"
-                    onClick={() => setWorkflowUnlocked(true)}
-                  >
-                    Continue to workflow
-                  </button>
-                </div>
-              ) : null}
-            </section>
+                      ) : uploadErrorMessage ? (
+                        <>
+                          <p className="upload-error">{uploadErrorMessage}</p>
+                          <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+                            <button
+                              type="button"
+                              className="confirm-mapping demand-cta browse-again"
+                              onClick={handleBrowseAgain}
+                            >
+                              Browse Again
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p>Drop CSV file here</p>
+                          <p>Or browse files on your system</p>
+                          <p className="upload-secondary">
+                            [Supported formats: CSV (Recommended), Excel (.xlsx, .xls)]
+                          </p>
+                          <p className="upload-secondary">[Max file size: 50MB]</p>
+                        </>
+                      )}
+                    </div>
+                  </label>
+                  {statusMessage ? <p className="status-text">{statusMessage}</p> : null}
+                </section>
 
-            {workflowUnlocked && (
+            {hasParsedData && (
               <>
                 {dataSummary ? (
-              <section className="forecast-section data-summary-card">
+                  <>
+                    <section className="forecast-section data-summary-card">
                 <div className="data-summary-title">
                   <h3>Data summary</h3>
                   <p>Cleaned dataset ready for forecasting</p>
                 </div>
-                <div className="summary-grid">
-                  <div>
-                    <p>File</p>
-                    <strong>{dataSummary.fileName}</strong>
+                <div className="summary-details">
+                  <div className="summary-line">
+                    📄 File: {dataSummary.fileName}
                   </div>
-                  <div>
-                    <p>Rows</p>
-                    <strong>{formatNumber(dataSummary.rows)}</strong>
+                  <div className="summary-line">
+                    📊 Rows: {formatNumber(dataSummary.rows)} | Columns:{" "}
+                    {formatNumber(dataSummary.columns)}
                   </div>
-                  <div>
-                    <p>Columns</p>
-                    <strong>{formatNumber(dataSummary.columns)}</strong>
+                  <div className="summary-line">
+                    📉 Duplicates Removed: {formatNumber(dataSummary.duplicatesRemoved)}
                   </div>
-                  <div>
-                    <p>Duplicates removed</p>
-                    <strong>{formatNumber(dataSummary.duplicatesRemoved)}</strong>
+                  <div className="summary-line">
+                    📦 File Size: {dataSummary.fileSizeLabel ?? "—"}
+                  </div>
+                  <div className="summary-line">
+                    📈 Data Retention: {dataSummary.dataRetention ?? "—"}
                   </div>
                 </div>
-                <div className="summary-checks">
-                  <span>✔ Data cleaned successfully</span>
-                  <span>✔ Duplicates removed</span>
+                <div className="summary-quality">
+                  <p>⚙️ Data Quality</p>
+                  <ul>
+                    <li>
+                      Missing Values: {dataSummary.missingValuesLabel ?? "Unknown"}
+                    </li>
+                    <li>
+                      Negative Sales: {dataSummary.negativeSalesLabel ?? "Unknown"}
+                    </li>
+                    <li>
+                      Outliers: {dataSummary.outliersLabel ?? "Unknown"}
+                    </li>
+                  </ul>
                 </div>
-                {(dataSummary.productMetric || dataSummary.storeMetric) ? (
-                  <div className="summary-extra">
-                    {dataSummary.productMetric ? (
-                      <span>{dataSummary.productMetric.text}</span>
-                    ) : null}
-                    {dataSummary.storeMetric ? (
-                      <span>{dataSummary.storeMetric.text}</span>
-                    ) : null}
-                  </div>
+                <div className="summary-extra">
+                  {dataSummary.productMetric ? (
+                    <span>{dataSummary.productMetric.text}</span>
+                  ) : null}
+                  {dataSummary.storeMetric ? (
+                    <span>{dataSummary.storeMetric.text}</span>
+                  ) : null}
+                </div>
+                {dataSummary.timeRange ? (
+                  <p className="summary-time-range">
+                    📅 Time Range: {dataSummary.timeRange}
+                  </p>
                 ) : null}
                 <p className="summary-status">Status: {dataSummary.status}</p>
-              </section>
-            ) : null}
+                    </section>
+                    
+                  </>
+                ) : null}
 
             {!dataSummary && (
-              <section className="forecast-section">
+              <section className="forecast-section mapping-section">
                 <div className="forecast-section-header">
                   <div>
                     <h3>Column Mapping</h3>
+                    <p
+                      className="forecast-section-subtitle mapping-subtitle"
+                      style={{
+                        marginTop: 32,
+                        fontFamily: '"Inter", sans-serif',
+                        fontSize: "0.95rem",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      ChainMind intelligently detects key columns and suggests a mapping based on the data. You can review and adjust everything manually.
+                    </p>
                   </div>
-                  <span className="status-pill status-pill-secondary">Auto-detected</span>
+                  <span className="status-pill status-pill-secondary">Auto mapping</span>
                 </div>
-                <p className="mapping-description">
-                  System have auto-detected columns. You can adjust them if needed.
-                </p>
-                <div className="mapping-grid">
-                  <label className="mapping-column">
-                    <span>Date column</span>
-                    <select
-                      value={dateColumn}
-                      onChange={(event) => setDateColumn(event.target.value)}
-                      disabled={!columns.length}
-                    >
-                      <option value="">Not Available</option>
-                      {columns.map((column) => (
-                        <option key={`date-${column}`} value={column}>
-                          {column}
-                        </option>
-                      ))}
-                    </select>
-                    <small className="mapping-detected">
-                      Detected: {dateColumn || "Not Available"}
-                    </small>
-                  </label>
 
-                  <label className="mapping-column">
-                    <span>Sales column</span>
-                    <select
-                      value={salesColumn}
-                      onChange={(event) => setSalesColumn(event.target.value)}
-                      disabled={!columns.length}
-                    >
-                      <option value="">Not Available</option>
-                      {columns.map((column) => (
-                        <option key={`sales-${column}`} value={column}>
-                          {column}
-                        </option>
-                      ))}
-                    </select>
-                    <small className="mapping-detected">
-                      Detected: {salesColumn || "Not Available"}
-                    </small>
-                  </label>
-
-                  <label className="mapping-column">
-                    <span>Product column</span>
-                    <select
-                      value={productColumn}
-                      onChange={(event) => setProductColumn(event.target.value)}
-                      disabled={!columns.length}
-                    >
-                      <option value="">Not Available</option>
-                      {columns.map((column) => (
-                        <option key={`product-${column}`} value={column}>
-                          {column}
-                        </option>
-                      ))}
-                    </select>
-                    <small className="mapping-detected">
-                      Detected: {productColumn || "Not Available"}
-                    </small>
-                  </label>
-
-                  <label className="mapping-column">
-                    <span>Store column</span>
-                    <select
-                      value={storeColumn}
-                      onChange={(event) => setStoreColumn(event.target.value)}
-                      disabled={!columns.length}
-                    >
-                      <option value="">Not Available</option>
-                      {columns.map((column) => (
-                        <option key={`store-${column}`} value={column}>
-                          {column}
-                        </option>
-                      ))}
-                    </select>
-                    <small className="mapping-detected">
-                      Detected: {storeColumn || "Not Available"}
-                    </small>
-                  </label>
-
-                  <label className="mapping-column">
-                    <span>Price column</span>
-                    <select
-                      value={priceColumn}
-                      onChange={(event) => setPriceColumn(event.target.value)}
-                      disabled={!columns.length}
-                    >
-                      <option value="">Not Available</option>
-                      {columns.map((column) => (
-                        <option key={`price-${column}`} value={column}>
-                          {column}
-                        </option>
-                      ))}
-                    </select>
-                    <small className="mapping-detected">
-                      Detected: {priceColumn || "Not Available"}
-                    </small>
-                  </label>
+                <div className="mapping-block" style={{ marginTop: 20, marginBottom: 24 }}>
+                  <div className="mapping-block-header" style={{ marginBottom: 8 }}>
+                    <h4>Section A: Core Inputs (Required)</h4>
+                    <div className="mapping-description" style={{ marginTop: 8, display: "flex", gap: 16 }}>
+                    </div>
+                    <div className="mapping-description" style={{ marginTop: 6, display: "flex", gap: 16 }}>
+                    </div>
+                  </div>
+                  <div className="mapping-grid final-grid" style={{ marginTop: 2 }}>
+                    {renderRoleField(
+                      "date",
+                      dateColumn,
+                      setDateColumn,
+                      "Date column"
+                    )}
+                    {renderRoleField(
+                      "sales",
+                      salesColumn,
+                      setSalesColumn,
+                      "Sales column"
+                    )}
+                  </div>
                 </div>
+
+                <div className="mapping-block" style={{ marginBottom: 24 }}>
+                  <div className="mapping-block-header" style={{ marginBottom: 10 }}>
+                    <h4>Section B: Product (Recommended for product-level forecasting)</h4>
+                    <div className="mapping-description" style={{ marginTop: 6, display: "flex", gap: 12 }}>
+                    </div>
+                    <p className="mapping-helper" style={{ marginTop: 6 }}>
+                    </p>
+                  </div>
+                  <div className="mapping-grid final-grid" style={{ marginTop: 12 }}>
+                    {renderRoleField(
+                      "product",
+                      productColumn,
+                      setProductColumn,
+                      "Product ID / SKU"
+                    )}
+                    {renderRoleField(
+                      "productName",
+                      dataProductNameColumn,
+                      setDataProductNameColumn,
+                      "Product Name"
+                    )}
+                    {renderRoleField(
+                      "productCategory",
+                      dataProductCategoryColumn,
+                      setDataProductCategoryColumn,
+                      "Category"
+                    )}
+                  </div>
+                </div>
+
+                <div className="mapping-block" style={{ marginBottom: 24 }}>
+                  <div className="mapping-block-header" style={{ marginBottom: 12 }}>
+                    <h4>Section C: Location Details (Optional – for location-based forecasting)</h4>
+                    <p className="mapping-helper" style={{ marginTop: 6 }}>
+                    </p>
+                  </div>
+                  <div className="mapping-grid final-grid" style={{ marginTop: 12, gap: 12 }}>
+                    {renderRoleField(
+                      "storeId",
+                      storeColumn,
+                      setStoreColumn,
+                      "Store ID"
+                    )}
+                    {renderRoleField(
+                      "store",
+                      dataStoreNameColumn,
+                      setDataStoreNameColumn,
+                      "Store Name"
+                    )}
+                  </div>
+                  <div
+                    className="location-detail-panel"
+                    style={{
+                      marginTop: 24,
+                      padding: 12,
+                      marginLeft: 0,
+                      marginRight: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      fontWeight: 600,
+                      color: "#1f2937",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 12,
+                      background: "#fff",
+                    }}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <p style={{ margin: 0 }}>Geographic Details</p>
+                      <small
+                        className="mapping-helper"
+                        style={{ marginTop: 0, display: "block", lineHeight: 1.4 }}
+                      >
+                      </small>
+                    </div>
+                    <div
+                      className="location-detail-grid"
+                      style={{
+                        marginTop: 12,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+                        gap: "10px 16px",
+                      }}
+                    >
+                      {columns.map((column) => (
+                        <label
+                          key={`location-column-${column}`}
+                          className="location-detail-entry"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            padding: "6px 8px",
+                            borderRadius: 6,
+                            border: "1px solid rgba(0,0,0,0.08)",
+                            background: "#fff",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedLocationColumns.includes(column)}
+                            onChange={() => toggleLocationColumn(column)}
+                          />
+                          <span>{column}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mapping-block" style={{ marginBottom: 16 }}>
+                  <div className="mapping-block-header" style={{ marginBottom: 8 }}>
+                    <h4>Section D: Additional Features (Optional)</h4>
+                    <p className="mapping-helper" style={{ marginTop: 6 }}>
+                      Select additional columns that may influence demand:
+                    </p>
+                    <p className="mapping-helper" style={{ marginTop: 4 }}>
+                    </p>
+                    <p className="mapping-helper" style={{ marginTop: 8, fontWeight: 600 }}>
+                    </p>
+                    {recommendedImportantColumns.length ? (
+                      <div className="mapping-helper" style={{ marginTop: 2, display: "flex", gap: 12 }}>
+                        {recommendedImportantColumns.map((column) => (
+                          <span key={`recommended-${column}`}>{column}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mapping-helper" style={{ marginTop: 2 }}>None flagged</p>
+                    )}
+                    <p className="mapping-helper" style={{ marginTop: 4 }}>
+                      These features help improve forecast accuracy by capturing external factors like pricing and promotions.
+                    </p>
+                  </div>
+                  {additionalColumns.length ? (
+                    <div
+                      className="additional-checkbox-grid"
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+                        gap: 12,
+                      }}
+                    >
+                      {additionalColumns.map((column) => {
+                        const normalized = normalizeColumnName(column);
+                        const isImportant = IMPORTANT_ADDITIONAL_KEYWORDS.some((keyword) =>
+                          normalized.includes(keyword)
+                        );
+                        return (
+                          <label
+                            key={`additional-${column}`}
+                            className="mapping-column additional-checkbox"
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              padding: "8px 12px",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedAdditionalFeatures.includes(column)}
+                              onChange={() => toggleAdditionalFeature(column)}
+                            />
+                            <span style={{ flex: 1 }}>{column}</span>
+                            {isImportant ? (
+                              <small className="mapping-helper">Preferred</small>
+                            ) : null}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mapping-empty">No additional columns available.</p>
+                  )}
+                </div>
+
                 <button
                   type="button"
                   className="confirm-mapping demand-cta"
@@ -1243,303 +3195,308 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                 )}
               </div>
             </section>
-            {hasParsedData ? (
-              enhanceConfirmed ? (
+            {hasParsedData && (
+              <>
                 <section className="forecast-section dual-demand-intelligence">
                   <div className="dual-demand-header">
-                    <h3>Dual Demand Intelligence</h3>
+                    <h3>Demand Intelligence Engine</h3>
                     <p>
-                      Understand how demand behaves across your products and locations to make smarter forecasting decisions.
+                      Automatically analyzes product demand patterns to reveal stability, risk, and data quality.
                     </p>
                   </div>
                   <div className="dual-demand-grid">
                     <div className="demand-box demand-box-product">
                       <h4>Product Demand Analysis</h4>
                       <p>Track SKU-level demand signals to surface top performers and risk areas.</p>
-                    </div>
-                    <div className="demand-box demand-box-store">
-                      <h4>Store / Location Demand Analysis</h4>
-                      <p>Compare performance across stores, regions, and countries to reveal coverage gaps.</p>
+                      {productDemandAnalysis.totalGroups ? (
+                        <>
+                          <p className="demand-summary-meta">
+                            Segmented {productDemandAnalysis.totalGroups} product groups.
+                          </p>
+                          {renderDemandList(
+                            productDemandAnalysis,
+                            "product",
+                            (type) => handleViewDemandType(type, "product")
+                          )}
+                        </>
+                      ) : (
+                        <p className="demand-summary-empty">
+                          Confirm the mapping and clean the data to run product demand classification.
+                        </p>
+                      )}
+                      <small className="demand-box-note">
+                      </small>
                     </div>
                   </div>
+                  <div className="demand-intelligence-actions">
+                    <button
+                      type="button"
+                      className="demand-cta"
+                      onClick={handleExportDemandIntelligence}
+                      disabled={!productDemandAnalysis.totalGroups}
+                    >
+                      Export Demand Insights
+                    </button>
+                  </div>
                 </section>
-              ) : (
-                <section className="forecast-section mapping-section">
+                {dataSummary && (
+                  <section className="forecast-section config-section">
                   <div className="forecast-section-header">
                     <div>
-                      <h3>Enhance Your Forecast (Optional)</h3>
+                      <h3>Forecast Configuration</h3>
                       <p className="forecast-section-subtitle">
-                        Add additional data for better insights.
+                        Adjust forecast duration, level, and time grouping.
                       </p>
                     </div>
                   </div>
-
-                  <div className="mapping-item">
-                    <div className="mapping-side-left">
-                      <h4 className="mapping-title">1. Upload Product Details</h4>
-                      <p className="mapping-subtitle">Enable product-level forecasting.</p>
-                      <div className="mapping-upload">
-                        <label className="upload-pill" htmlFor="product-mapping">
-                          Browse Data
-                        </label>
-                        <input
-                          id="product-mapping"
-                          type="file"
-                          accept=".csv,.xlsx,.xls"
-                          onChange={handleProductMappingChange}
-                        />
-                      </div>
-                      <p className="mapping-supported">[Supported formats: CSV (Recommended), Excel (.xlsx, .xls)],[Max file size: 50MB]</p>
-                      {productMapping.fileName ? (
-                        <p className="mapping-hint">
-                          Uploaded: {productMapping.fileName}
-                          {productMapping.fileSize ? ` (${productMapping.fileSize})` : ""}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="mapping-side-right">
-                      {productMapping.headers.length ? (
-                        <>
-                          <h4>Column Mapping</h4>
-                          <div className="mapping-grid">
-                            <label className="mapping-column">
-                              <span>Product ID</span>
-                              <select
-                                value={productMapping.idColumn}
-                                onChange={(event) =>
-                                  setProductMapping((prev) => ({
-                                    ...prev,
-                                    idColumn: event.target.value,
-                                  }))
-                                }
-                              >
-                                <option value="">Not Available</option>
-                                {productMapping.headers.map((header) => (
-                                  <option key={`prod-id-${header}`} value={header}>
-                                    {header}
-                                  </option>
-                                ))}
-                              </select>
-                              <small className="mapping-detected">
-                                Detected: {productMapping.idColumn || "Not Available"}
-                              </small>
-                            </label>
-                            <label className="mapping-column">
-                              <span>Product Name</span>
-                              <select
-                                value={productMapping.nameColumn}
-                                onChange={(event) =>
-                                  setProductMapping((prev) => ({
-                                    ...prev,
-                                    nameColumn: event.target.value,
-                                  }))
-                                }
-                              >
-                                <option value="">Not Available</option>
-                                {productMapping.headers.map((header) => (
-                                  <option key={`prod-name-${header}`} value={header}>
-                                    {header}
-                                  </option>
-                                ))}
-                              </select>
-                              <small className="mapping-detected">
-                                Detected: {productMapping.nameColumn || "Not Available"}
-                              </small>
-                            </label>
-                          </div>
-                          {productMapping.status ? (
-                            <p className="mapping-hint">{productMapping.status}</p>
-                          ) : null}
-                        </>
-                      ) : (
-                        <p className="mapping-empty">Upload a file to configure product columns.</p>
-                      )}
-                    </div>
+                  <div className="forecast-config-note" style={{ marginBottom: 16 }}>
+                    <p className="mapping-helper" style={{ marginTop: 0 }}>
+                      {maxForecastDays
+                        ? `Based on available data, you can forecast up to ${maxForecastDays} days (${availableDataDays} days of history).`
+                        : "Clean the uploaded data to reveal how much horizon you can forecast."}
+                    </p>
+                    <small className="mapping-helper" style={{ marginTop: 4 }}>
+                      {TIME_GROUPING_REQUIREMENTS}
+                    </small>
                   </div>
-
-                  <div className="mapping-item">
-                    <div className="mapping-side-left">
-                      <h4 className="mapping-title">2. Upload Store Details</h4>
-                      <p className="mapping-subtitle">Add location context to forecasts.</p>
-                      <div className="mapping-upload">
-                        <label className="upload-pill" htmlFor="store-mapping">
-                          Browse Data
-                        </label>
-                        <input
-                          id="store-mapping"
-                          type="file"
-                          accept=".csv,.xlsx,.xls"
-                          onChange={handleStoreMappingChange}
-                        />
+                  <div className="config-grid">
+                    <label className="config-field">
+                      <span>Forecast Level</span>
+                      <select
+                          value={forecastLevel}
+                          onChange={(event) => setForecastLevel(event.target.value as ForecastLevel)}
+                        >
+                          {FORECAST_LEVEL_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <small className="mapping-helper">
+                          {FORECAST_LEVEL_OPTIONS.find(
+                            (option) => option.value === forecastLevel
+                          )?.description}
+                        </small>
+                      </label>
+                      <label className="config-field">
+                        <span>Forecast Duration</span>
+                        <select
+                          value={
+                            visibleForecastDurations.length
+                              ? forecastDurationDays.toString()
+                              : ""
+                          }
+                          onChange={(event) =>
+                            setForecastDurationDays(Number(event.target.value))
+                          }
+                          disabled={!visibleForecastDurations.length}
+                        >
+                          {visibleForecastDurations.length ? (
+                            visibleForecastDurations.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))
+                          ) : (
+                            <option value="">Clean the data to unlock durations</option>
+                          )}
+                        </select>
+                        <small className="mapping-helper">
+                          {forecastDurationHelperText}
+                        </small>
+                      </label>
+                      <label className="config-field">
+                        <span>Time Grouping</span>
+                        <select
+                          value={forecastGranularity}
+                          onChange={(event) => setForecastGranularity(event.target.value)}
+                          disabled={!availableTimeGroupingOptions.length}
+                        >
+                          {availableTimeGroupingOptions.length ? (
+                            availableTimeGroupingOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))
+                          ) : (
+                            <option value="">Add more history to unlock options</option>
+                          )}
+                        </select>
+                        <small className="mapping-helper" style={{ marginTop: 4 }}>
+                          {timeGroupingHelperText}
+                        </small>
+                      </label>
+                      <div className="config-field config-toggle-field">
+                        <button
+                          type="button"
+                          className={`config-toggle ${forecastRequested ? "active" : ""}`}
+                          onClick={handleGenerateForecast}
+                        >
+                          {forecastRequested ? "Regenerate Forecast" : "Generate Forecast"}
+                        </button>
+                        <small className="mapping-helper" style={{ marginTop: 4 }}>
+                        </small>
                       </div>
-                      <p className="mapping-supported">[Supported formats: CSV (Recommended), Excel (.xlsx, .xls)],[Max file size: 50MB]</p>
-                      {storeMapping.fileName ? (
-                        <p className="mapping-hint">
-                          Uploaded: {storeMapping.fileName}
-                          {storeMapping.fileSize ? ` (${storeMapping.fileSize})` : ""}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="mapping-side-right">
-                      {storeMapping.headers.length ? (
-                        <>
-                          <h4>Column Mapping</h4>
-                          <div className="mapping-grid">
-                            <label className="mapping-column">
-                              <span>Store ID</span>
-                              <select
-                                value={storeMapping.storeIdColumn}
-                                onChange={(event) =>
-                                  setStoreMapping((prev) => ({
-                                    ...prev,
-                                    storeIdColumn: event.target.value,
-                                  }))
-                                }
-                              >
-                                <option value="">Not Available</option>
-                                {storeMapping.headers.map((header) => (
-                                  <option key={`store-id-${header}`} value={header}>
-                                    {header}
-                                  </option>
-                                ))}
-                              </select>
-                              <small className="mapping-detected">
-                                Detected: {storeMapping.storeIdColumn || "Not Available"}
-                              </small>
-                            </label>
-                            <label className="mapping-column">
-                              <span>City</span>
-                              <select
-                                value={storeMapping.cityColumn}
-                                onChange={(event) =>
-                                  setStoreMapping((prev) => ({
-                                    ...prev,
-                                    cityColumn: event.target.value,
-                                  }))
-                                }
-                              >
-                                <option value="">Not Available</option>
-                                {storeMapping.headers.map((header) => (
-                                  <option key={`store-city-${header}`} value={header}>
-                                    {header}
-                                  </option>
-                                ))}
-                              </select>
-                              <small className="mapping-detected">
-                                Detected: {storeMapping.cityColumn || "Not Available"}
-                              </small>
-                            </label>
-                            <label className="mapping-column">
-                              <span>State/Region</span>
-                              <select
-                                value={storeMapping.stateColumn}
-                                onChange={(event) =>
-                                  setStoreMapping((prev) => ({
-                                    ...prev,
-                                    stateColumn: event.target.value,
-                                  }))
-                                }
-                              >
-                                <option value="">Not Available</option>
-                                {storeMapping.headers.map((header) => (
-                                  <option key={`store-state-${header}`} value={header}>
-                                    {header}
-                                  </option>
-                                ))}
-                              </select>
-                              <small className="mapping-detected">
-                                Detected: {storeMapping.stateColumn || "Not Available"}
-                              </small>
-                            </label>
-                            <label className="mapping-column">
-                              <span>Country</span>
-                              <select
-                                value={storeMapping.countryColumn}
-                                onChange={(event) =>
-                                  setStoreMapping((prev) => ({
-                                    ...prev,
-                                    countryColumn: event.target.value,
-                                  }))
-                                }
-                              >
-                                <option value="">Not Available</option>
-                                {storeMapping.headers.map((header) => (
-                                  <option key={`store-country-${header}`} value={header}>
-                                    {header}
-                                  </option>
-                                ))}
-                              </select>
-                              <small className="mapping-detected">
-                                Detected: {storeMapping.countryColumn || "Not Available"}
-                              </small>
-                            </label>
-                          </div>
-                          <p className="mapping-status">
-                            Required: store_id, city, state/region, country
+                  </div>
+                  {forecastRequested && (
+                    <section className="forecast-section overall-forecast-output" style={{ marginTop: 20 }}>
+                      <div className="forecast-section-header">
+                        <div>
+                          <h4>Overall Demand Forecast</h4>
+                          <p className="forecast-section-subtitle">
+                            Simple moving average of the cleaned data.
                           </p>
-                          {storeMapping.status ? (
-                            <p className="mapping-hint">{storeMapping.status}</p>
-                          ) : null}
+                        </div>
+                      </div>
+                      {overallForecastSection ? (
+                        <>
+                          <div className="forecast-metrics-grid">
+                            <div className="forecast-metric">
+                              <span>Total forecast</span>
+                              <strong>{formatForecastValue(overallForecastSection.metrics.totalForecast)}</strong>
+                            </div>
+                            <div className="forecast-metric">
+                              <span>Average daily</span>
+                              <strong>{formatForecastValue(overallForecastSection.metrics.avgDailyForecast)}</strong>
+                            </div>
+                            <div className="forecast-metric">
+                              <span>Lowest p50</span>
+                              <strong>{formatForecastValue(overallForecastSection.metrics.minForecast)}</strong>
+                            </div>
+                            <div className="forecast-metric">
+                              <span>Highest p50</span>
+                              <strong>{formatForecastValue(overallForecastSection.metrics.maxForecast)}</strong>
+                            </div>
+                          </div>
+                          <div className="forecast-output-table" style={{ marginTop: 12 }}>
+                            <div className="forecast-table-row forecast-table-header">
+                              <span>Date</span>
+                              <span>Forecast</span>
+                              <span>Lower</span>
+                              <span>Upper</span>
+                            </div>
+                            {forecastTablePreview.length ? (
+                              forecastTablePreview.map((entry) => (
+                                <div className="forecast-table-row" key={entry.date}>
+                                  <span>{entry.date || "N/A"}</span>
+                                  <span>{formatForecastValue(entry.forecast)}</span>
+                                  <span>{formatForecastValue(entry.lowerBound)}</span>
+                                  <span>{formatForecastValue(entry.upperBound)}</span>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="forecast-table-row">
+                                <span>No forecast data available yet.</span>
+                              </div>
+                            )}
+                            {extraForecastRows > 0 && (
+                              <div className="forecast-table-row forecast-table-more">
+                                <span>+{extraForecastRows} more day(s) in the full forecast.</span>
+                              </div>
+                            )}
+                          </div>
                         </>
                       ) : (
-                        <p className="mapping-empty">Upload a file to configure store columns.</p>
+                        <p className="mapping-helper" style={{ marginTop: 8 }}>
+                          Forecast will appear here once the model finishes running.
+                        </p>
                       )}
-                    </div>
-                  </div>
-
-                  {mappingErrors ? (
-                    <div className="mapping-alert">
-                      <ul>
-                        {mappingErrors.map((error) => (
-                          <li key={error}>• {error}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  {mappingSuccess ? (
-                    <p className="mapping-success">{mappingSuccess}</p>
-                  ) : null}
-
-                  <div className="mapping-actions">
-                    <button
-                      type="button"
-                      className="mapping-skip"
-                      onClick={handleSkipMapping}
-                    >
-                      Skip
-                    </button>
-                    <button
-                      type="button"
-                      className="confirm-mapping demand-cta"
-                      onClick={handleConfirmMappingDetails}
-                      disabled={!productMapping.fileName && !storeMapping.fileName}
-                    >
-                      Confirm Mapping
-                    </button>
-                  </div>
-                </section>
-              )
-            ) : null}
+                    </section>
+                  )}
+                    {(forecastLevel === "product" || forecastLevel === "combined") && (
+                      <div className="forecast-flow-panel" style={{ marginTop: 18 }}>
+                        <p className="mapping-helper" style={{ marginBottom: 8 }}>
+                          Priority: Category → Product Name (ID) → ID. Select the category first to scope the SKU list.
+                        </p>
+                        {productCategoryOptions.length ? (
+                          <label className="config-field">
+                            <span>Category</span>
+                            <select
+                              value={selectedCategory}
+                              onChange={(event) => {
+                                setSelectedCategory(event.target.value);
+                                setSelectedProductKey("");
+                              }}
+                            >
+                              <option value="">Select Category</option>
+                              {productCategoryOptions.map((category) => (
+                                <option key={category} value={category}>
+                                  {category}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : (
+                          <p className="mapping-helper" style={{ marginBottom: 8 }}>
+                            No category column detected; product dropdown lists every SKU.
+                          </p>
+                        )}
+                        <label className="config-field">
+                          <span>Product</span>
+                          <select
+                            value={selectedProductKey}
+                            onChange={(event) => setSelectedProductKey(event.target.value)}
+                          >
+                            <option value="">Select Product</option>
+                            {productOptions.map((option) => (
+                              <option key={option.key} value={option.key}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {!productOptions.length ? (
+                          <p className="mapping-helper">
+                            Product metadata isn’t available yet; confirm mapping above to populate choices.
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
+                    {(forecastLevel === "location" || forecastLevel === "combined") && (
+                      <div className="forecast-flow-panel" style={{ marginTop: 18 }}>
+                        <p className="mapping-helper" style={{ marginBottom: 8 }}>
+                          Location hierarchy: Country → State → City → Area/Zone → Store ID. Fields appear only if the dataset carries that column.
+                        </p>
+                        {locationFieldConfig.length ? (
+                          locationFieldConfig.map((field) => (
+                            <label className="config-field" key={field.key}>
+                              <span>
+                                {field.label}
+                                <small className="mapping-helper" style={{ fontSize: "0.8rem", marginLeft: 4 }}>
+                                  (Column: {field.column})
+                                </small>
+                              </span>
+                              <select
+                                value={locationSelections[field.key] ?? ""}
+                                onChange={(event) =>
+                                  updateLocationSelection(field.key, event.target.value)
+                                }
+                              >
+                                <option value="">Select {field.label}</option>
+                                {(locationOptionsByField[field.key] ?? []).map((value) => (
+                                  <option key={value} value={value}>
+                                    {value}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ))
+                        ) : (
+                          <p className="mapping-helper">
+                            No location columns (Country/State/City/Area/Store ID) detected yet.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                )}
+              </>
+            )}
           </>
         )}
           </div>
         </div>
       </main>
-
-      {mappingSuccess && showSuccessToast && (
-        <div className="mapping-success-popup">
-          <div className="mapping-success-popup-card">
-            <span className="mapping-success-icon" aria-hidden="true">
-              ✓
-            </span>
-            <p>{mappingSuccess}</p>
-            <button type="button" onClick={closeSuccessToast}>
-              Close
-            </button>
-          </div>
-        </div>
-      )}
 
       {validationModal && (
         <div className="demand-modal-backdrop">
@@ -1561,6 +3518,33 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
                 ))}
               </div>
             ) : null}
+          </div>
+        </div>
+      )}
+      {demandInsightModal && (
+        <div className="demand-modal-backdrop">
+          <div className="demand-modal">
+            <button
+              type="button"
+              className="demand-modal-close"
+              onClick={() => setDemandInsightModal(null)}
+              aria-label="Close demand insight modal"
+            >
+              ×
+            </button>
+            <h3>{demandInsightModal.title}</h3>
+            <div className="demand-modal-flow">
+              {demandInsightModal.list.length ? (
+                demandInsightModal.list.map((item, index) => (
+                  <span key={`${item}-${index}`}>• {item}</span>
+                ))
+              ) : (
+                <span>No entries available for this demand bucket.</span>
+              )}
+              {demandInsightModal.more ? (
+                <span>{demandInsightModal.more}</span>
+              ) : null}
+            </div>
           </div>
         </div>
       )}

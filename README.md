@@ -100,6 +100,23 @@ npm run dev
 | **Inventory Control**       | Safety stock lifecycle tracking and deterministic stock movement.    |
 
 ---
+## 🧾 Column Mapping
+
+### Section B
+
+| Column                         | Details                                                                 |
+| ------------------------------ | ----------------------------------------------------------------------- |
+| Product ID / SKU / Product Name | Key product identifiers that span master-sku linkage, catalog lookups, and dataset joins. |
+| Category                       | Product hierarchy or assortment bucket used for segmentation and forecasting. |
+
+### Section C
+
+| Column               | Details                                                                 |
+| -------------------- | ----------------------------------------------------------------------- |
+| Store ID / Store Name | Identifier and friendly label used to correlate stores across systems and UIs. |
+| Geographic Details   | Location metadata (region, city, latitude/longitude, etc.) used for routing, mapping, and market intelligence. |
+
+---
 
 ## 🔌 API Documentation
 Visit **http://localhost:8000/docs** for the full interactive Swagger documentation.
