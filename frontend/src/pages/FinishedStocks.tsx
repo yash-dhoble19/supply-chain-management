@@ -9,6 +9,7 @@ import {
   upsertPublishedGood,
 } from "../services/marketplaceService";
 import type { PublishedMarketplaceItem } from "../types/marketplace.types";
+import { apiGet } from "../services/api";
 
 interface FinishedStocksProps {
   activePage: AppPage;
@@ -91,6 +92,8 @@ export function FinishedStocks({ activePage, onNavigate }: FinishedStocksProps) 
     imageUrl: "",
   });
 
+  const [logisticsOrders, setLogisticsOrders] = useState<any[]>([]);
+
   const reloadManufacturingGoods = async () => {
     setManufacturingLoading(true);
     try {
@@ -132,6 +135,24 @@ export function FinishedStocks({ activePage, onNavigate }: FinishedStocksProps) 
     );
 
     reloadManufacturingGoods();
+    
+    // Fetch logistics orders
+    const fetchOrders = async () => {
+      try {
+        const orders = await apiGet<any[]>("/logistics/orders/");
+        setLogisticsOrders(orders);
+      } catch (err) {
+        console.error("Failed to fetch logistics orders", err);
+      }
+    };
+    fetchOrders();
+
+    const handleLogisticsOrdersUpdated = () => fetchOrders();
+    window.addEventListener("logistics-orders-updated", handleLogisticsOrdersUpdated);
+
+    return () => {
+      window.removeEventListener("logistics-orders-updated", handleLogisticsOrdersUpdated);
+    };
   }, []);
 
   useEffect(() => {
@@ -823,6 +844,55 @@ export function FinishedStocks({ activePage, onNavigate }: FinishedStocksProps) 
                           View
                         </button>
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {/* Incoming Logistics Orders */}
+        <section className="mt-10">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-2xl font-bold text-on-surface">Incoming Retailer Orders</h3>
+            <span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+              {logisticsOrders.length} orders
+            </span>
+          </div>
+
+          {logisticsOrders.length === 0 ? (
+            <div className="rounded-2xl bg-surface-container-low p-8 text-center text-sm text-secondary">
+              No orders received from retailers yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-3xl border border-outline-variant/10 bg-surface-container-lowest">
+              <table className="min-w-full divide-y divide-outline-variant/10 text-sm">
+                <thead className="bg-surface-container-high">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-secondary">Retailer</th>
+                    <th className="px-4 py-3 text-left font-semibold text-secondary">Product</th>
+                    <th className="px-4 py-3 text-left font-semibold text-secondary">Quantity</th>
+                    <th className="px-4 py-3 text-left font-semibold text-secondary">Status</th>
+                    <th className="px-4 py-3 text-left font-semibold text-secondary">Driver</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant/10 bg-surface-container-lowest">
+                  {logisticsOrders.map((order) => (
+                    <tr key={order.id} className="hover:bg-surface-container-high transition-colors">
+                      <td className="px-4 py-3 text-on-surface font-semibold">{order.retailer_name || "Unknown Retailer"}</td>
+                      <td className="px-4 py-3 text-secondary">{order.product_name}</td>
+                      <td className="px-4 py-3 text-on-surface font-bold">{order.quantity} units</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                          order.status === "Pending" ? "bg-amber-100 text-amber-700" :
+                          order.status === "In Progress" || order.status === "Sourced" ? "bg-blue-100 text-blue-700" :
+                          "bg-green-100 text-green-700"
+                        }`}>
+                          {order.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-secondary">{order.driver_id ? `Assigned (ID: ${order.driver_id})` : "Awaiting Assignment"}</td>
                     </tr>
                   ))}
                 </tbody>
