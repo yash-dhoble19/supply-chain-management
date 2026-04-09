@@ -9,6 +9,7 @@ import {
   type ForecastSection,
   type SmartForecastOutput,
 } from "./forecastEngine";
+import ForecastOutput from "./ForecastOutput";
 
 type CsvRow = Record<string, string>;
 
@@ -2010,17 +2011,6 @@ const togglePreview = () => {
   const forecastDurationHelperText = maxForecastDays
     ? `Historical coverage (${availableDataDays} day${availableDataDays === 1 ? "" : "s"}) supports forecasting up to ${maxForecastDays} day${maxForecastDays === 1 ? "" : "s"}.`
     : "Clean the data to unlock forecast durations.";
-  const forecastTablePreview = overallForecastSection?.table.slice(0, 10) ?? [];
-  const extraForecastRows = Math.max(
-    0,
-    (overallForecastSection?.table.length ?? 0) - forecastTablePreview.length
-  );
-  const smartForecastSummary: SmartForecastOutput["summary"] | undefined =
-    overallForecastSection?.smart?.summary;
-  const smartForecastModel = overallForecastSection?.smart?.model;
-  const formatForecastValue = (value: number) =>
-    value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
   const handleExportDemandIntelligence = () => {
     if (!productDemandAnalysis.totalGroups) {
       return;
@@ -3173,177 +3163,24 @@ const togglePreview = () => {
                   </section>
                 )}
 
-                {forecastRequested && (
-                  <>
-                    <section className="forecast-section overall-forecast-output" style={{ marginTop: 20 }}>
-                      <div className="forecast-section-header">
-                        <div>
-                          <h3>Demand Forecast</h3>
-                          <p className="forecast-section-subtitle">
-                            Simple moving average of the cleaned data.
-                          </p>
-                        </div>
-                      </div>
-                      {overallForecastSection ? (
-                        <>
-                          <div className="forecast-kpi-card-grid">
-                            <article className="forecast-kpi-card">
-                              <span className="forecast-kpi-label">Total forecast</span>
-                              <strong className="forecast-kpi-value">
-                                {formatForecastValue(overallForecastSection.metrics.totalForecast)}
-                              </strong>
-                            </article>
-                            <article className="forecast-kpi-card">
-                              <span className="forecast-kpi-label">Average daily</span>
-                              <strong className="forecast-kpi-value">
-                                {formatForecastValue(overallForecastSection.metrics.avgDailyForecast)}
-                              </strong>
-                            </article>
-                            <article className="forecast-kpi-card">
-                              <span className="forecast-kpi-label">Lowest p50</span>
-                              <strong className="forecast-kpi-value">
-                                {formatForecastValue(overallForecastSection.metrics.minForecast)}
-                              </strong>
-                            </article>
-                            <article className="forecast-kpi-card">
-                              <span className="forecast-kpi-label">Highest p50</span>
-                              <strong className="forecast-kpi-value">
-                                {formatForecastValue(overallForecastSection.metrics.maxForecast)}
-                              </strong>
-                            </article>
-                          </div>
-                          {smartForecastSummary ? (
-                            <div className="forecast-smart-summary" style={{ marginTop: 12, display: "flex", gap: 16 }}>
-                              <span>Demand: {smartForecastSummary.demandType}</span>
-                              <span>Trend: {smartForecastSummary.trend}</span>
-                              <span>Confidence: {smartForecastSummary.confidence}</span>
-                            </div>
-                          ) : null}
-                          {smartForecastModel ? (
-                            <p className="mapping-helper" style={{ marginTop: 8 }}>
-                              Model: {smartForecastModel.name} — {smartForecastModel.reason}
-                            </p>
-                          ) : null}
-                          <div className="forecast-output-table" style={{ marginTop: 12 }}>
-                            <div className="forecast-table-row forecast-table-header">
-                              <span>Date</span>
-                              <span>Forecast</span>
-                              <span>Lower</span>
-                              <span>Upper</span>
-                            </div>
-                            {forecastTablePreview.length ? (
-                              forecastTablePreview.map((entry) => (
-                                <div className="forecast-table-row" key={entry.date}>
-                                  <span>{entry.date || "N/A"}</span>
-                                  <span>{formatForecastValue(entry.forecast)}</span>
-                                  <span>{formatForecastValue(entry.lowerBound)}</span>
-                                  <span>{formatForecastValue(entry.upperBound)}</span>
-                                </div>
-                              ))
-                            ) : (
-                              <div className="forecast-table-row">
-                                <span>No forecast data available yet.</span>
-                              </div>
-                            )}
-                            {extraForecastRows > 0 && (
-                              <div className="forecast-table-row forecast-table-more">
-                                <span>+{extraForecastRows} more day(s) in the full forecast.</span>
-                              </div>
-                            )}
-                          </div>
-                        </>
-                      ) : (
-                        <p className="mapping-helper" style={{ marginTop: 8 }}>
-                          Forecast will appear here once the model finishes running.
-                        </p>
-                      )}
-                    </section>
-                    {(forecastLevel === "product" || forecastLevel === "combined") && (
-                      <div className="forecast-flow-panel" style={{ marginTop: 18 }}>
-                        <p className="mapping-helper" style={{ marginBottom: 8 }}>
-                          Priority: Category → Product Name (ID) → ID. Select the category first to scope the SKU list.
-                        </p>
-                        {productCategoryOptions.length ? (
-                          <label className="config-field">
-                            <span>Category</span>
-                            <select
-                              value={selectedCategory}
-                              onChange={(event) => {
-                                setSelectedCategory(event.target.value);
-                                setSelectedProductKey("");
-                              }}
-                            >
-                              <option value="">Select Category</option>
-                              {productCategoryOptions.map((category) => (
-                                <option key={category} value={category}>
-                                  {category}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        ) : (
-                          <p className="mapping-helper" style={{ marginBottom: 8 }}>
-                            No category column detected; product dropdown lists every SKU.
-                          </p>
-                        )}
-                        <label className="config-field">
-                          <span>Product</span>
-                          <select
-                            value={selectedProductKey}
-                            onChange={(event) => setSelectedProductKey(event.target.value)}
-                          >
-                            <option value="">Select Product</option>
-                            {productOptions.map((option) => (
-                              <option key={option.key} value={option.key}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {!productOptions.length ? (
-                          <p className="mapping-helper">
-                            Product metadata isn’t available yet; confirm mapping above to populate choices.
-                          </p>
-                        ) : null}
-                      </div>
-                    )}
-                    {(forecastLevel === "location" || forecastLevel === "combined") && (
-                      <div className="forecast-flow-panel" style={{ marginTop: 18 }}>
-                        <p className="mapping-helper" style={{ marginBottom: 8 }}>
-                          Location hierarchy: Country → State → City → Area/Zone → Store ID. Fields appear only if the dataset carries that column.
-                        </p>
-                        {locationFieldConfig.length ? (
-                          locationFieldConfig.map((field) => (
-                            <label className="config-field" key={field.key}>
-                              <span>
-                                {field.label}
-                                <small className="mapping-helper" style={{ fontSize: "0.8rem", marginLeft: 4 }}>
-                                  (Column: {field.column})
-                                </small>
-                              </span>
-                              <select
-                                value={locationSelections[field.key] ?? ""}
-                                onChange={(event) =>
-                                  updateLocationSelection(field.key, event.target.value)
-                                }
-                              >
-                                <option value="">Select {field.label}</option>
-                                {(locationOptionsByField[field.key] ?? []).map((value) => (
-                                  <option key={value} value={value}>
-                                    {value}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          ))
-                        ) : (
-                          <p className="mapping-helper">
-                            No location columns (Country/State/City/Area/Store ID) detected yet.
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </>
+                {forecastRequested && overallForecastSection && (
+                  <ForecastOutput
+                    section={overallForecastSection}
+                    forecastLevel={forecastLevel}
+                    productCategoryOptions={productCategoryOptions}
+                    productOptions={productOptions}
+                    selectedCategory={selectedCategory}
+                    selectedProductKey={selectedProductKey}
+                    onCategoryChange={(v) => {
+                      setSelectedCategory(v);
+                      setSelectedProductKey("");
+                    }}
+                    onProductChange={setSelectedProductKey}
+                    locationFieldConfig={locationFieldConfig}
+                    locationOptionsByField={locationOptionsByField}
+                    locationSelections={locationSelections}
+                    onLocationChange={updateLocationSelection}
+                  />
                 )}
               </>
             )}
