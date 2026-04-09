@@ -20,6 +20,7 @@ from api.routes import (
     procurement,
     products,
     published_goods,
+    schedules,
 )
 from api.auth_handler import get_current_user
 from config import settings
@@ -57,6 +58,7 @@ app.include_router(inventory.router)
 app.include_router(manufacturing.router)
 app.include_router(published_goods.router)
 app.include_router(logistics_orders.router)
+app.include_router(schedules.router)
 
 
 @app.on_event("startup")
