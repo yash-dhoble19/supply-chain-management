@@ -88,6 +88,7 @@ export function ManageSuppliersView({
   const [activeSupplier, setActiveSupplier] = useState<SupplierManagementDetail | null>(null);
   const [isDetailLoading, setDetailLoading] = useState(false);
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setDebouncedSearchTerm(searchTerm), 250);
@@ -230,6 +231,26 @@ export function ManageSuppliersView({
     window.URL.revokeObjectURL(url);
   }
 
+  async function handleDeleteSupplier(supplierId: string) {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this supplier? This action cannot be undone.",
+    );
+    if (!confirmed) return;
+
+    setDeletingId(supplierId);
+    try {
+      await procurementService.deleteSupplier(supplierId);
+      setReloadToken((current) => current + 1);
+      onSupplierMutated?.();
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error ? requestError.message : "Unable to delete supplier.";
+      window.alert(message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-[1.75rem] bg-[radial-gradient(circle_at_top_left,rgba(37,84,199,0.2),transparent_40%),linear-gradient(180deg,#ffffff_0%,#f7faff_100%)] p-6 shadow-panel">
@@ -298,6 +319,8 @@ export function ManageSuppliersView({
           setDetailOpen(true);
         }}
         onEditSupplier={openEditModal}
+        onDeleteSupplier={handleDeleteSupplier}
+        deletingId={deletingId}
       />
 
       <SupplierFormModal

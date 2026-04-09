@@ -19,6 +19,8 @@ interface SupplierManagementTableProps {
   onAddSupplier: () => void;
   onViewSupplier: (supplierId: string) => void;
   onEditSupplier: (supplier: SupplierManagementRecord) => void;
+  onDeleteSupplier: (supplierId: string) => void;
+  deletingId?: string | null;
 }
 
 function LoadingRows() {
@@ -65,6 +67,8 @@ export function SupplierManagementTable({
   onAddSupplier,
   onViewSupplier,
   onEditSupplier,
+  onDeleteSupplier,
+  deletingId,
 }: SupplierManagementTableProps) {
   return (
     <section className="overflow-hidden rounded-[1.5rem] border border-outline-variant/15 bg-surface-container-lowest shadow-sm">
@@ -215,6 +219,8 @@ export function SupplierManagementTable({
                       <SupplierRowActions
                         onView={() => onViewSupplier(supplier.supplier_id)}
                         onEdit={() => onEditSupplier(supplier)}
+                        onDelete={() => onDeleteSupplier(supplier.supplier_id)}
+                        isDeleting={deletingId === supplier.supplier_id}
                       />
                     </td>
                   </tr>

@@ -407,18 +407,21 @@ def update_supplier(supplier_id: int, payload: SupplierWrite, db: Session = Depe
 
 @router.delete("/api/procurement/suppliers/{supplier_id}")
 def delete_supplier(supplier_id: int, db: Session = Depends(database.get_db)):
-    db_supplier = (
-        db.query(models.Supplier)
-        .options(joinedload(models.Supplier.purchase_orders))
-        .filter(models.Supplier.id == supplier_id)
-        .first()
-    )
-    if not db_supplier:
+    from sqlalchemy import text
+
+    # Use raw SQL to completely bypass ORM lazy-loading (avoids PG type 1043 error)
+    row = db.execute(text("SELECT id FROM suppliers WHERE id = :sid"), {"sid": supplier_id}).fetchone()
+    if not row:
         raise HTTPException(status_code=404, detail="Supplier not found")
-    if db_supplier.purchase_orders:
+
+    po_count = db.execute(
+        text("SELECT COUNT(*) FROM purchase_orders WHERE supplier_id = :sid"),
+        {"sid": supplier_id},
+    ).scalar()
+    if po_count and po_count > 0:
         raise HTTPException(status_code=409, detail="Supplier has purchase orders and cannot be deleted")
 
-    db.delete(db_supplier)
+    db.execute(text("DELETE FROM suppliers WHERE id = :sid"), {"sid": supplier_id})
     db.commit()
     return {"message": "Supplier deleted successfully"}
 

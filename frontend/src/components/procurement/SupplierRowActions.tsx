@@ -1,9 +1,11 @@
 interface SupplierRowActionsProps {
   onView: () => void;
   onEdit: () => void;
+  onDelete: () => void;
+  isDeleting?: boolean;
 }
 
-export function SupplierRowActions({ onView, onEdit }: SupplierRowActionsProps) {
+export function SupplierRowActions({ onView, onEdit, onDelete, isDeleting }: SupplierRowActionsProps) {
   return (
     <div className="flex items-center justify-end gap-2">
       <button
@@ -22,10 +24,13 @@ export function SupplierRowActions({ onView, onEdit }: SupplierRowActionsProps) 
       </button>
       <button
         type="button"
-        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-outline-variant/20 bg-white text-on-surface-variant transition hover:bg-surface-container-low"
-        aria-label="More supplier actions"
+        onClick={onDelete}
+        disabled={isDeleting}
+        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 text-xs font-bold uppercase tracking-[0.16em] text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+        aria-label="Delete supplier"
       >
-        <span className="material-symbols-outlined text-base">more_horiz</span>
+        <span className="material-symbols-outlined text-sm">delete</span>
+        {isDeleting ? "…" : "Delete"}
       </button>
     </div>
   );
