@@ -1159,6 +1159,19 @@ body {
   font-size: 0.85rem;
 }
 
+.mapping-helper {
+  color: #64748b;
+  font-size: 0.85rem;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.mapping-helper-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .config-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1183,28 +1196,33 @@ body {
   color: #0f172a;
 }
 
-.config-toggle-field {
+.forecast-config-actions {
+  margin-top: 24px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
+  justify-content: flex-start;
 }
 
 .config-toggle {
-  border: 1px solid #94a3b8;
-  background: #f8fafc;
-  border-radius: 999px;
-  padding: 8px 18px;
-  font-weight: 600;
-  color: #0f172a;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  border: none;
+  background: #3b82f6;
+  border-radius: 12px;
+  padding: 12px 32px;
+  font-weight: 700;
+  font-size: 1rem;
+  color: #fff;
   cursor: pointer;
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.35);
+  transition: background 0.2s, transform 0.2s;
+  font-family: inherit;
+}
+
+.config-toggle:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
 }
 
 .config-toggle.active {
-  background: #0ea5e9;
-  color: #fff;
-  border-color: #0ea5e9;
+  background: #2563eb;
 }
 
 .upload-dropzone {

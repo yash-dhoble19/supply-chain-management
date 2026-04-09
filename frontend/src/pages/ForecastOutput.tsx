@@ -587,7 +587,9 @@ export default function ForecastOutput({
               value={selectedProductKey}
               onChange={(event) => onProductChange(event.target.value)}
             >
-              <option value="">Select product</option>
+              <option value="">
+                {selectedCategory ? `All ${selectedCategory} Products` : "All Products"}
+              </option>
               {productOptions.map((option) => (
                 <option key={option.key} value={option.key}>
                   {option.label}

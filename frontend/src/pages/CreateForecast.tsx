@@ -128,13 +128,15 @@ const TIME_GROUPING_OPTIONS = [
 
 const TIME_GROUPING_REQUIREMENTS = TIME_GROUPING_OPTIONS.map((option) => {
   if (option.value === "Weekly") {
-    return `${option.label} requires ≥ ${option.minDays / 7} weeks (weeks start on ${WEEK_START_DAY})`;
+    const weeks = option.minDays / 7;
+    return `${option.label} requires ≥ ${weeks} weeks (weeks start on ${WEEK_START_DAY})`;
   }
   if (option.value === "Monthly") {
-    return `${option.label} requires ≥ ${option.minDays / 30} months`;
+    const months = option.minDays / 30;
+    return `${option.label} requires ≥ ${months} months`;
   }
   return `${option.label} requires ≥ ${option.minDays} days`;
-}).join(" · ");
+});
 
 const MIN_DURATION_FOR_GROUPING = Math.min(
   ...TIME_GROUPING_OPTIONS.map((option) => option.minDays),
@@ -142,7 +144,7 @@ const MIN_DURATION_FOR_GROUPING = Math.min(
 
 const FORECAST_LEVEL_OPTIONS: { value: ForecastLevel; label: string; description: string }[] = [
   { value: "overall", label: "Overall Forecast", description: "Uses all data; recommended for single product/location teams." },
-  { value: "product", label: "Product-Level Forecast", description: "Drills into SKU-level patterns (category → name/ID priority)." },
+  { value: "product", label: "Product-Level Forecast", description: "" },
   { value: "location", label: "Location-Level Forecast", description: "Focuses on hierarchy (country → state → city/area → store)." },
   { value: "combined", label: "Product + Location Forecast", description: "Aligns SKU and location logic for precise distribution planning." },
 ];
@@ -1469,12 +1471,6 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     });
   }, [locationFieldConfig]);
 
-  useEffect(() => {
-    if (!selectedProductKey && productOptions.length) {
-      setSelectedProductKey(productOptions[0].key);
-    }
-  }, [productOptions, selectedProductKey]);
-
   const updateLocationSelection = (fieldKey: string, value: string) => {
     setLocationSelections((prev) => ({
       ...prev,
@@ -2079,7 +2075,7 @@ const togglePreview = () => {
       ? `${availableTimeGroupingOptions
           .map((option) => option.label)
           .join(", ")} unlocked by a ${forecastDurationDays}-day forecast.`
-      : `Need at least ${MIN_DURATION_FOR_GROUPING} forecast days to unlock a grouping.`
+      : ""
     : "Select a forecast duration to unlock grouping options.";
 
   const visibleForecastDurations = useMemo(
@@ -2104,7 +2100,7 @@ const togglePreview = () => {
 
 
   const forecastDurationHelperText = maxForecastDays
-    ? `Historical coverage (${availableDataDays} day${availableDataDays === 1 ? "" : "s"}) supports forecasting up to ${maxForecastDays} day${maxForecastDays === 1 ? "" : "s"}.`
+    ? ""
     : "Clean the data to unlock forecast durations.";
   const handleExportDemandIntelligence = () => {
     if (!productDemandAnalysis.totalGroups) {
@@ -3324,8 +3320,6 @@ const togglePreview = () => {
                   </div>
                   <div className="dual-demand-grid">
                     <div className="demand-box demand-box-product">
-                      <h4>Product Demand Analysis</h4>
-                      <p>Track SKU-level demand signals to surface top performers and risk areas.</p>
                       {productDemandAnalysis.totalGroups ? (
                         <>
                           <p className="demand-summary-meta">
@@ -3373,9 +3367,11 @@ const togglePreview = () => {
                           ? `Based on available data, you can forecast up to ${maxForecastDays} days (${availableDataDays} days of history).`
                           : "Clean the uploaded data to reveal how much horizon you can forecast."}
                       </p>
-                      <small className="mapping-helper" style={{ marginTop: 4 }}>
-                        {TIME_GROUPING_REQUIREMENTS}
-                      </small>
+                      <div className="mapping-helper mapping-helper-list" style={{ marginTop: 4 }}>
+                        {TIME_GROUPING_REQUIREMENTS.map((line) => (
+                          <span key={line}>{line}</span>
+                        ))}
+                      </div>
                     </div>
                     <div className="config-grid">
                       <label className="config-field">
@@ -3414,7 +3410,9 @@ const togglePreview = () => {
                             <option value="">Clean the data to unlock durations</option>
                           )}
                         </select>
-                        <small className="mapping-helper">{forecastDurationHelperText}</small>
+                        {forecastDurationHelperText && (
+                          <small className="mapping-helper">{forecastDurationHelperText}</small>
+                        )}
                       </label>
                       <label className="config-field">
                         <span>Time Grouping</span>
@@ -3433,9 +3431,11 @@ const togglePreview = () => {
                             <option value="">Add more history to unlock options</option>
                           )}
                         </select>
-                        <small className="mapping-helper" style={{ marginTop: 4 }}>
-                          {timeGroupingHelperText}
-                        </small>
+                        {timeGroupingHelperText && (
+                          <small className="mapping-helper" style={{ marginTop: 4 }}>
+                            {timeGroupingHelperText}
+                          </small>
+                        )}
                       </label>
 
                       {(forecastLevel === "product" || forecastLevel === "combined") && (
@@ -3465,7 +3465,7 @@ const togglePreview = () => {
                               value={selectedProductKey}
                               onChange={(event) => setSelectedProductKey(event.target.value)}
                             >
-                              <option value="">{selectedCategory ? `All ${selectedCategory} Products` : "All Products (Combined)"}</option>
+                              <option value="">{selectedCategory ? `All ${selectedCategory} Products` : "All Products"}</option>
                               {productOptions.map((option) => (
                                 <option key={option.key} value={option.key}>
                                   {option.label}
@@ -3478,17 +3478,15 @@ const togglePreview = () => {
                           </label>
                         </>
                       )}
-                      <div className="config-field config-toggle-field">
-                        <button
-                          type="button"
-                          className={`config-toggle ${forecastRequested ? "active" : ""}`}
-                          onClick={handleGenerateForecast}
-                        >
-                          {forecastRequested ? "Regenerate Forecast" : "Generate Forecast"}
-                        </button>
-                        <small className="mapping-helper" style={{ marginTop: 4 }}>
-                        </small>
-                      </div>
+                    </div>
+                    <div className="forecast-config-actions">
+                      <button
+                        type="button"
+                        className={`config-toggle ${forecastRequested ? "active" : ""}`}
+                        onClick={handleGenerateForecast}
+                      >
+                        {forecastRequested ? "Regenerate Forecast" : "Generate Forecast"}
+                      </button>
                     </div>
                   </section>
                 )}
