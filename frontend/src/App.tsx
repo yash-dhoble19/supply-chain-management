@@ -105,7 +105,7 @@ function getPageFromPath(pathname: string): AppPage {
     case "/":
     case "/procurement":
     default:
-      return "procurement";
+      return "login";
   }
 }
 
