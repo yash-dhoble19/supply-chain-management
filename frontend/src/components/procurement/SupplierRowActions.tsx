@@ -30,3 +30,5 @@ export function SupplierRowActions({ onView, onEdit }: SupplierRowActionsProps) 
     </div>
   );
 }
+
+// anything

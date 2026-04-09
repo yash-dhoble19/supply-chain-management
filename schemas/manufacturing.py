@@ -34,3 +34,4 @@ class ManufacturingGoods(ManufacturingGoodsBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True, extra='ignore')
+# anything

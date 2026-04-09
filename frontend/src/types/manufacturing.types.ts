@@ -23,3 +23,4 @@ export interface ManufacturingGoodsUpdate {
   status?: string;
   progress?: number;
 }
+// anything

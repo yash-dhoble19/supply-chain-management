@@ -11,3 +11,5 @@ export function SupplierStatCard({ label, value }: SupplierStatCardProps) {
     </div>
   );
 }
+
+// anything

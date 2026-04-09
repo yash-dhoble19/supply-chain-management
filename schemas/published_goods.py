@@ -21,3 +21,5 @@ class PublishedGoodsOut(PublishedGoodsBase):
 
     class Config:
         orm_mode = True
+
+# anything

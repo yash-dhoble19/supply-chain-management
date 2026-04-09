@@ -76,3 +76,5 @@ def sync_logistics_schema(engine) -> None:
 
         for statement in LOGISTICS_INDEXES:
             connection.execute(text(statement))
+
+# anything

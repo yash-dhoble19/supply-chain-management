@@ -114,3 +114,5 @@ def sync_supplier_schema(engine) -> None:
 
         for statement in SUPPLIER_INDEXES:
             connection.execute(text(statement))
+
+# anything

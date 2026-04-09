@@ -396,3 +396,5 @@ class ManufacturingGoods(Base):
     start_date = Column(Date, nullable=True)
     est_completion = Column(Date, nullable=True)
     unit_price = Column(Float, nullable=False)
+
+# anything

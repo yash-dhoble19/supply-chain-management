@@ -42,3 +42,5 @@ def login(payload: LoginRequest, db: Session = Depends(database.get_db)):
         "token_type": "bearer",
         "user": user
     }
+
+# anything

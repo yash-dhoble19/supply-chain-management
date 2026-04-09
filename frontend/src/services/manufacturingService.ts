@@ -9,3 +9,4 @@ export const manufacturingService = {
     apiPut<ManufacturingGoods, ManufacturingGoodsUpdate>(`/api/manufacturing/${id}`, payload, signal),
   getCompleted: (signal?: AbortSignal) => apiGet<ManufacturingGoods[]>("/api/manufacturing/completed", signal),
 };
+// anything

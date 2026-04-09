@@ -75,3 +75,5 @@ def log_stock_movement(movement: StockMovement, db: Session = Depends(database.g
 @router.get("/inventory/analysis")
 def analyze_inventory(db: Session = Depends(database.get_db)):
     return product_service.analyze_inventory(db)
+
+# anything

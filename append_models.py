@@ -53,3 +53,5 @@ class EmailInteractionLog(Base):
 
     interaction = relationship('EmailInteraction', back_populates='logs')
 ''')
+
+# anything

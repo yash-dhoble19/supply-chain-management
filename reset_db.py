@@ -25,3 +25,4 @@ if confirm == "yes":
     print("🔄 Now run 'python main.py' to recreate them with the NEW columns.")
 else:
     print("❌ Operation cancelled.")
+# anything

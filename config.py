@@ -348,3 +348,5 @@ def estimate_promotion_impact_range() -> tuple:
         tuple: (min_uplift, max_uplift) as percentages (e.g., 0.20, 0.35)
     """
     return (settings.promotion_min_uplift, settings.promotion_max_uplift)
+
+# anything

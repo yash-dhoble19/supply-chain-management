@@ -36,3 +36,5 @@ try:
         print(f"\n❌ Failed to create product")
 except Exception as e:
     print(f"\n❌ Error: {e}")
+
+# anything

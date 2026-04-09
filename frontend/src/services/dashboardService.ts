@@ -16,3 +16,5 @@ export const dashboardService = {
   getStats: (signal?: AbortSignal) => apiGet<Stats[]>("/api/dashboard/stats", signal),
   getOverview: (signal?: AbortSignal) => apiGet<DashboardOverview>("/api/dashboard/overview", signal),
 };
+
+// anything

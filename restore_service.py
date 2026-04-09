@@ -57,3 +57,5 @@ text = re.sub(
 
 with open('services/procurement_automation_service.py', 'w', encoding='utf-8') as f:
     f.write(text)
+
+# anything

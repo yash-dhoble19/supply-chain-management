@@ -98,3 +98,4 @@ for s in suppliers:
 
 db.close()
 print("\n🎉 Setup complete! You can now run your dashboard.")
+# anything

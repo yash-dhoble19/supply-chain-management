@@ -96,3 +96,5 @@ export function PrintablePurchaseOrder({ order }: PrintablePurchaseOrderProps) {
     document.body,
   );
 }
+
+// anything

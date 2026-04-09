@@ -40,3 +40,5 @@ class InventoryActivityItem(BaseModel):
     quantity_change: int
     reason: str
     stockout_flag: bool
+
+# anything

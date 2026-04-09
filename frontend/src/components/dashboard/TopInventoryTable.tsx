@@ -51,3 +51,5 @@ export function TopInventoryTable({ items }: TopInventoryTableProps) {
     </div>
   );
 }
+
+// anything

@@ -236,3 +236,5 @@ async def shipment_tracking_socket(websocket: WebSocket, shipment_id: int):
         realtime_manager.disconnect(shipment_id, websocket)
     finally:
         db.close()
+
+# anything

@@ -28,3 +28,5 @@ class StockMovement(BaseModel):
     product_id: int
     quantity_change: int
     reason: str
+
+# anything

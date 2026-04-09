@@ -902,7 +902,8 @@ export function FinishedStocks({ activePage, onNavigate }: FinishedStocksProps) 
                               sessionStorage.setItem("pendingLogisticsOrder", JSON.stringify({
                                 destination: order.retailer_location || "Central Retail Hub",
                                 productName: order.product_name,
-                                quantity: order.quantity
+                                quantity: order.quantity,
+                                logisticsOrderId: order.id
                               }));
                               onNavigate("logistics");
                             }}
@@ -1062,3 +1063,5 @@ export function FinishedStocks({ activePage, onNavigate }: FinishedStocksProps) 
     </div>
   );
 }
+
+// anything

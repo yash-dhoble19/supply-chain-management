@@ -24,3 +24,5 @@ export interface AuthResponse {
 export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
   return apiPost<AuthResponse, LoginPayload>("/api/auth/login", payload);
 }
+
+// anything

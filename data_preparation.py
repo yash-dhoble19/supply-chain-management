@@ -113,3 +113,5 @@ def get_data_summary(monthly_df: pd.DataFrame) -> dict:
         "date_range_start": monthly_df["ds"].min().strftime("%Y-%m-%d"),
         "date_range_end": monthly_df["ds"].max().strftime("%Y-%m-%d")
     }
+
+# anything

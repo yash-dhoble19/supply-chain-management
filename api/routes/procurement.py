@@ -613,3 +613,5 @@ def recommend_supplier(request: ProcurementRequest, db: Session = Depends(databa
     rec_text += f"They are the most reliable option that meets your {request.max_days_allowed}-day requirement."
 
     return {"ai_recommendation": rec_text}
+
+# anything

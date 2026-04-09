@@ -38,3 +38,5 @@ print(f"Save status: {resp.status_code}")
 if resp.status_code == 200:
     session.patch(f"{N8N_BASE}/rest/workflows/{WORKFLOW_ID}", json={"active": True})
     print("Workflow published securely!")
+
+# anything

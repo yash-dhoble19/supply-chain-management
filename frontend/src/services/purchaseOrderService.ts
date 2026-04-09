@@ -24,3 +24,5 @@ export const purchaseOrderService = {
   downloadPdf: (id: string, signal?: AbortSignal) =>
     apiDownload(`/api/procurement/purchase-orders/${id}/pdf`, signal),
 };
+
+// anything

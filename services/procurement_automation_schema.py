@@ -218,3 +218,5 @@ def sync_procurement_automation_schema(engine) -> None:
             connection.execute(text(SUPPLIER_ID_SYNC_TRIGGER))
         except Exception as e:
             print(f"[trigger warning] {e}")
+
+# anything

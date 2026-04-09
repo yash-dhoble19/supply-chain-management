@@ -6,3 +6,5 @@ export interface PublishedMarketplaceItem extends ManufacturingGoods {
   notes: string;
   publishedAt: string;
 }
+
+// anything

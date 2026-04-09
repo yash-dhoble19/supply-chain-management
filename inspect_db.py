@@ -31,3 +31,5 @@ if __name__ == "__main__":
     for s in db.query(models.Shipment).order_by(models.Shipment.id.desc()).limit(5).all():
         print(f"   - {s.tracking_number} | Status: {s.status} | Progress: {s.progress_percent}%")
     db.close()
+
+# anything

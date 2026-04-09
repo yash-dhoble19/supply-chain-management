@@ -129,3 +129,5 @@ def build_purchase_order_pdf(document: dict) -> bytes:
         (f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_start}\n%%EOF").encode("latin-1")
     )
     return bytes(pdf)
+
+# anything

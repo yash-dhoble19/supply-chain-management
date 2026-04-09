@@ -50,3 +50,5 @@ def generate_and_store_insight(
         db.commit()
     except Exception as e:
         print(f"Background AI Insight Error: {e}")
+
+# anything

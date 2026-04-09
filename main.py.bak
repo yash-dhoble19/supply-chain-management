@@ -2968,3 +2968,4 @@ def update_shipment(id: int, update: ShipmentUpdate, db: Session = Depends(datab
     db.commit()
     return shipment
 
+

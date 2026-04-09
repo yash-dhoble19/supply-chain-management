@@ -85,3 +85,5 @@ def update_inventory(product_id: int, adjustment: InventoryAdjustment, db: Sessi
 @router.get("/activity")
 def inventory_activity(limit: int = 20, db: Session = Depends(database.get_db)):
     return get_inventory_activity(db, limit=limit)
+
+# anything

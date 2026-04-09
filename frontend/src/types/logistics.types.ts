@@ -71,6 +71,9 @@ export interface ShipmentPlannerForm {
   originLng: string;
   destLat: string;
   destLng: string;
+  driverId: string;
+  productName: string;
+  quantity: string;
 }
 
 export const LOGISTICS_LOAD_TYPES: LoadType[] = [
@@ -80,3 +83,5 @@ export const LOGISTICS_LOAD_TYPES: LoadType[] = [
   "FRAGILE",
   "EXPRESS",
 ];
+
+// anything

@@ -65,3 +65,5 @@ class RoutePlanResponse(BaseModel):
     fuel_liters: float
     average_speed_kmh: float
     fuel_consumption_rate: float
+
+# anything

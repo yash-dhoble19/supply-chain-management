@@ -497,3 +497,5 @@ def get_session_quotes(db: Session, session_id: int):
     pass
 def approve_supplier(db: Session, supplier_id: int, session_id: int, notes: str):
     pass
+
+# anything

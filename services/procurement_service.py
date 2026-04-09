@@ -626,3 +626,5 @@ def build_purchase_order_document(db_po, db: Session) -> dict:
         "createdAt": created_at.isoformat(),
         "previewUrl": f"/api/procurement/purchase-orders/{db_po.id}",
     }
+
+# anything

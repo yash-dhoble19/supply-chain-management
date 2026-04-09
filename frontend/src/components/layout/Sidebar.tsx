@@ -86,3 +86,5 @@ export function Sidebar({ isOpen, onClose, activePage, onNavigate }: SidebarProp
     </>
   );
 }
+
+// anything

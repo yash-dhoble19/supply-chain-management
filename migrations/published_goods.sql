@@ -11,3 +11,5 @@ CREATE TABLE IF NOT EXISTS published_goods (
     published_at TIMESTAMPTZ DEFAULT NOW(),
     notes TEXT
 );
+
+-- anything

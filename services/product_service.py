@@ -360,3 +360,5 @@ def adjust_inventory_stock(
     db.commit()
     db.refresh(product)
     return product
+
+# anything

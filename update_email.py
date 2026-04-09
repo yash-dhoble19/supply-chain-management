@@ -18,3 +18,5 @@ print('Successfully updated contact emails to kartikakhade46@gmail.com')
 
 cur.close()
 conn.close()
+
+# anything

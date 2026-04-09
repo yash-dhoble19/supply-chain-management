@@ -308,3 +308,4 @@ class DemandProphetModel:
     def is_trained(self) -> bool:
         """Check if the model has been trained."""
         return self._is_trained
+# anything

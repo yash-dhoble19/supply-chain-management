@@ -98,3 +98,5 @@ async def health_check():
         "max_forecast_horizon": settings.max_forecast_horizon,
         "supported_countries": ["IN", "US", "UK"],
     }
+
+# anything

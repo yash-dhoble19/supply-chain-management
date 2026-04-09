@@ -19,3 +19,5 @@ if 'case "/ai-tools":' not in text:
 
 with open('frontend/src/App.tsx', 'w') as f:
     f.write(text)
+
+# anything

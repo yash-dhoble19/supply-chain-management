@@ -260,3 +260,5 @@ def infer_distance_from_location(
 
 
 realtime_manager = LogisticsRealtimeManager()
+
+# anything

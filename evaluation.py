@@ -272,3 +272,5 @@ def get_model_diagnostics(monthly_df: pd.DataFrame) -> Dict:
         "recommendations": recommendations,
         "overall_data_quality": "Good" if all(quality_checks.values()) else "Needs Improvement"
     }
+
+# anything

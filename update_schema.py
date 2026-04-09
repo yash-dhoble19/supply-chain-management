@@ -31,3 +31,5 @@ def force_update_schema():
 
 if __name__ == "__main__":
     force_update_schema()
+
+# anything

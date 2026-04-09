@@ -8,3 +8,5 @@ for row in cur.fetchall():
     print(f"{row[0]:40s} {row[1]}")
 cur.close()
 conn.close()
+
+# anything

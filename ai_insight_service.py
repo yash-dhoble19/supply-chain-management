@@ -557,3 +557,5 @@ Be direct and quantitative."""
         else:
             target = int(forecasted_units * (1 + safety_pct))
             return f"Target inventory: {target:,} units ({forecasted_units:,} forecast + {int(safety_pct * 100)}% buffer). {seasonality_note}. Coordinate with suppliers on lead time expectations."
+
+# anything

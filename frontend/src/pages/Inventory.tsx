@@ -858,3 +858,5 @@ export function Inventory({ activePage, onNavigate }: InventoryProps) {
     </div>
   );
 }
+
+// anything

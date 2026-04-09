@@ -42,3 +42,5 @@ def create_order(order: OrderCreate, background_tasks: BackgroundTasks, db: Sess
 @router.get("/orders/", response_model=List[OrderResponse])
 def read_orders(db: Session = Depends(database.get_db)):
     return db.query(models.Order).all()
+
+# anything

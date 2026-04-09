@@ -68,3 +68,5 @@ class ProcurementRequest(BaseModel):
     material_name: str
     quantity: int
     max_days_allowed: int
+
+# anything

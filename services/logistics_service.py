@@ -523,3 +523,5 @@ def serialize_route_plan(route_plan: dict) -> dict:
         "average_speed_kmh": round(float(route_plan["average_speed_kmh"]), 2),
         "fuel_consumption_rate": round(float(route_plan["fuel_consumption_rate"]), 3),
     }
+
+# anything

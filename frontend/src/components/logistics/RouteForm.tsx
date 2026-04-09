@@ -10,6 +10,7 @@ interface RouteFormProps {
   isPlanning: boolean;
   isCreating: boolean;
   canCreate: boolean;
+  drivers: { id: number; name: string }[];
 }
 
 const inputClassName =
@@ -23,6 +24,7 @@ export function RouteForm({
   isPlanning,
   isCreating,
   canCreate,
+  drivers = [],
 }: RouteFormProps) {
   const handleInputChange =
     (field: keyof ShipmentPlannerForm) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -73,6 +75,40 @@ export function RouteForm({
             ))}
           </select>
         </label>
+        
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-slate-800">Product Name</span>
+          <input
+            value={form.productName || ""}
+            onChange={handleInputChange("productName")}
+            className={inputClassName}
+            placeholder="e.g. Premium Leather Sofa"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-slate-800">Quantity</span>
+          <input
+            type="number"
+            value={form.quantity || ""}
+            onChange={handleInputChange("quantity")}
+            className={inputClassName}
+            placeholder="Units to ship"
+            min="1"
+          />
+        </label>
+        
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-slate-800">Assign Driver</span>
+          <select value={form.driverId || ""} onChange={handleInputChange("driverId")} className={inputClassName}>
+            <option value="" disabled>Select a driver</option>
+            {drivers.map((driver) => (
+              <option key={driver.id} value={driver.id.toString()}>
+                {driver.name}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -96,3 +132,5 @@ export function RouteForm({
     </section>
   );
 }
+
+// anything

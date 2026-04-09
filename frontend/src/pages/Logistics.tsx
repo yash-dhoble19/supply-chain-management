@@ -28,6 +28,9 @@ const defaultForm: ShipmentPlannerForm = {
   originLng: "",
   destLat: "",
   destLng: "",
+  driverId: "",
+  productName: "",
+  quantity: "",
 };
 
 function toOptionalNumber(value: string) {
@@ -82,6 +85,9 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
   const routeOutputRef = useRef<HTMLDivElement | null>(null);
   const selectedShipmentIdRef = useRef<number | null>(null);
 
+  const [drivers, setDrivers] = useState<{ id: number; name: string }[]>([]);
+  const [logisticsOrderId, setLogisticsOrderId] = useState<number | undefined>();
+
   const selectedShipment = shipments.find((shipment) => shipment.id === selectedShipmentId) ?? null;
 
   useEffect(() => {
@@ -97,13 +103,25 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
           ...prev,
           origin: "Main Manufacturing Factory",
           destination: payload.destination || "",
+          productName: payload.productName || "",
+          quantity: payload.quantity ? payload.quantity.toString() : "",
           loadType: "STANDARD",
         }));
+        if (payload.logisticsOrderId) {
+            setLogisticsOrderId(payload.logisticsOrderId);
+        }
         sessionStorage.removeItem("pendingLogisticsOrder");
       } catch (e) {
         console.error("Failed to parse pending logistics order", e);
       }
     }
+
+    // Fetch drivers for dropdown
+    fetch("http://127.0.0.1:8000/api/drivers")
+      .then(res => res.json())
+      .then(data => setDrivers(data))
+      .catch(console.error);
+
   }, []);
 
   const fetchShipments = useCallback(async (signal?: AbortSignal) => {
@@ -271,6 +289,14 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
       setPlanError("Origin and destination are required before creating a shipment.");
       return;
     }
+    if (!plannerForm.driverId) {
+      setPlanError("Please select a driver to assign this schedule to.");
+      return;
+    }
+    if (!plannerForm.productName || !plannerForm.quantity) {
+        setPlanError("Please provide product name and quantity for the schedule request.");
+        return;
+    }
 
     setIsCreating(true);
     setPlanError(null);
@@ -286,11 +312,30 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
         origin_lng: toOptionalNumber(plannerForm.originLng),
         dest_lat: toOptionalNumber(plannerForm.destLat),
         dest_lng: toOptionalNumber(plannerForm.destLng),
+        driver_id: parseInt(plannerForm.driverId)
       });
+
+      // Create Driver Schedule Request
+      const driver = drivers.find(d => d.id.toString() === plannerForm.driverId);
+      if (driver) {
+          await logisticsService.createSchedule({
+              origin: plannerForm.origin.trim(),
+              destination: plannerForm.destination.trim(),
+              load_type: plannerForm.loadType,
+              distance_km: routePlan?.distance_km,
+              eta_hours: routePlan?.eta_hours,
+              driver_id: driver.id,
+              product_name: plannerForm.productName,
+              quantity: parseInt(plannerForm.quantity),
+              carrier_type: plannerForm.loadType,
+              logistics_order_id: logisticsOrderId,
+              shipment_id: shipment.id
+          });
+      }
 
       setShipments((current) => [shipment, ...current]);
       setSelectedShipmentId(shipment.id);
-      setStatusMessage(`Shipment ${shipment.trackingId} created and saved to PostgreSQL.`);
+      setStatusMessage(`Shipment created and Schedule sent to Driver ${driver?.name || ""}.`);
       setLastUpdated(new Date());
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Shipment creation failed");
@@ -368,6 +413,7 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
               isPlanning={isPlanning}
               isCreating={isCreating}
               canCreate={!!routePlan}
+              drivers={drivers}
             />
             <div ref={routeOutputRef} tabIndex={-1} className="outline-none">
               <RouteInsights plan={routePlan} error={planError} />
@@ -417,3 +463,5 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
     </div>
   );
 }
+
+// anything

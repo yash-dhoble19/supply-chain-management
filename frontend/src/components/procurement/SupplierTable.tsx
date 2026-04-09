@@ -76,3 +76,5 @@ export function SupplierTable({ rows }: SupplierTableProps) {
     </div>
   );
 }
+
+// anything

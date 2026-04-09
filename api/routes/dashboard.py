@@ -43,3 +43,5 @@ def get_stats(db: Session = Depends(database.get_db)):
 @router.get("/overview")
 def get_overview(db: Session = Depends(database.get_db)):
     return dashboard_service.get_dashboard_overview(db)
+
+# anything

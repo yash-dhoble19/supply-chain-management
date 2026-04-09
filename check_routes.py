@@ -8,3 +8,5 @@ print("All app routes with 'products':")
 for r in app.routes:
     if 'products' in r.path:
         print(f"  {r.path} - Methods: {r.methods}")
+
+# anything

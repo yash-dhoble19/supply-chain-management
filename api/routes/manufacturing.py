@@ -69,3 +69,4 @@ def replace_manufacturing_task(
     if not goods:
         raise HTTPException(status_code=404, detail="Manufacturing goods not found")
     return goods
+# anything

@@ -157,6 +157,7 @@ class LogisticsOrderCreate(BaseModel):
     retailer_email: str = None
     retailer_phone: str = None
     retailer_location: str = None
+    driver_id: Optional[int] = None
 
 @router.post("/logistics/orders/create")
 def create_logistics_order(order: LogisticsOrderCreate = Body(...), db: Session = Depends(database.get_db)):
@@ -165,6 +166,7 @@ def create_logistics_order(order: LogisticsOrderCreate = Body(...), db: Session 
         quantity=order.quantity,
         unit_price=order.unit_price,
         status=order.status,
+        driver_id=order.driver_id,
         retailer_name=order.retailer_name,
         retailer_email=order.retailer_email,
         retailer_phone=order.retailer_phone,
@@ -180,3 +182,4 @@ def create_logistics_order(order: LogisticsOrderCreate = Body(...), db: Session 
     db.commit()
     db.refresh(db_order)
     return db_order
+# anything

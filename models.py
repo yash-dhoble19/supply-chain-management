@@ -585,3 +585,49 @@ class LogisticsOrder(Base):
     supplierName = Column(String, nullable=True)
     publishedAt = Column(String, nullable=True)
 
+
+# =====================================================
+# 16. SCHEDULE REQUESTS (Manufacturer → Driver Workflow)
+# =====================================================
+class ScheduleRequest(Base):
+    __tablename__ = "schedule_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Shipment info
+    origin = Column(String, nullable=False)
+    destination = Column(String, nullable=False)
+    load_type = Column(String, default="STANDARD")
+    distance_km = Column(Float, nullable=True)
+    eta_hours = Column(Float, nullable=True)
+
+    # Driver assignment
+    driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=False)
+    driver_name = Column(String, nullable=True)
+
+    # Product info
+    product_name = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False)
+
+    # Carrier type
+    carrier_type = Column(String, nullable=True)
+
+    # Status: PENDING → ACCEPTED / REJECTED → IN_PROGRESS → COMPLETED
+    status = Column(String, default="PENDING")
+
+    # Who created the schedule
+    manufacturer_name = Column(String, default="ChainMind Manufacturing")
+
+    # Related logistics order (if originated from retailer order)
+    logistics_order_id = Column(Integer, nullable=True)
+    shipment_id = Column(Integer, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    responded_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    driver = relationship("Driver")
+
+# anything

@@ -31,3 +31,5 @@ def delete_published_goods(goods_id: int, db: Session = Depends(database.get_db)
     db.delete(goods)
     db.commit()
     return {"message": "Deleted"}
+
+# anything

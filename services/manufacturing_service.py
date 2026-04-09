@@ -51,3 +51,4 @@ def update_manufacturing_goods(db: Session, goods_id: int, update_data: schemas.
 
 def get_completed_manufacturing_goods(db: Session) -> List[models.ManufacturingGoods]:
     return db.query(models.ManufacturingGoods).filter(models.ManufacturingGoods.status == "Done").all()
+# anything

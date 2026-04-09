@@ -24,3 +24,5 @@ export function ExecutiveBriefList({ briefs }: ExecutiveBriefListProps) {
     </div>
   );
 }
+
+// anything

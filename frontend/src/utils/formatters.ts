@@ -91,3 +91,5 @@ export function matchesDashboardQuery(query: string, values: Array<string | unde
 export function getActivityAriaLabel(activity: Activity): string {
   return `${activity.title}. ${activity.description}. ${formatRelativeTime(activity.timestamp)}.`;
 }
+
+// anything
