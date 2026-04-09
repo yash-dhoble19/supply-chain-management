@@ -9,6 +9,10 @@
 type CsvRow = Record<string, string>;
 type DemandType = "Smooth" | "Erratic" | "Intermittent" | "Seasonal" | "New";
 
+export function getDemandTypes(): DemandType[] {
+  return ["Smooth", "Erratic", "Intermittent", "Seasonal", "New"];
+}
+
 interface ForecastConfig {
   windowSize: number;
   forecastDurationDays: number;
@@ -64,9 +68,9 @@ export interface SmartForecastOutput {
   historical: { date: string; value: number }[];
   forecast: {
     date: string;
-    value: number;
-    p10: number;
-    p90: number;
+    forecast: number;
+    lowerBound: number;
+    upperBound: number;
     festivalName?: string;
     festivalImpact?: number;
   }[];
@@ -1984,113 +1988,135 @@ export const classifyDemand = (series: number[]): DemandType => {
 };
 
 // ---------------------------------------------------------------------------
-// Model selector
+// Prophet-only forecasting — single model for ALL demand types
 // ---------------------------------------------------------------------------
-type ModelKey = "moving_avg" | "weighted_avg" | "non_zero_avg" | "seasonal_repeat" | "naive";
+// Demand classification (classifyDemand) is KEPT above for UI badges/insights
+// but does NOT influence forecasting logic below.
+// ---------------------------------------------------------------------------
 
-const selectModel = (type: DemandType): ModelKey => {
-  switch (type) {
-    case "Smooth":
-      return "moving_avg";
-    case "Erratic":
-      return "weighted_avg";
-    case "Intermittent":
-      return "non_zero_avg";
-    case "Seasonal":
-      return "seasonal_repeat";
-    case "New":
-      return "naive";
-    default:
-      return "moving_avg";
-  }
+const PROPHET_MODEL_META = {
+  name: "Prophet (Adaptive)",
+  reason: "Statistical decomposition — trend + seasonality + holiday effects",
 };
 
-const MODEL_META: Record<ModelKey, { name: string; reason: string }> = {
-  moving_avg: {
-    name: "Moving Average",
-    reason: "Stable demand pattern detected",
-  },
-  weighted_avg: {
-    name: "Weighted Moving Average",
-    reason: "High variability — recent trends weighted more",
-  },
-  non_zero_avg: {
-    name: "Non-Zero Average",
-    reason: "Sparse demand — ignoring zero-sale periods",
-  },
-  seasonal_repeat: {
-    name: "Seasonal Repeat",
-    reason: "Repeating seasonal pattern detected",
-  },
-  naive: {
-    name: "Naïve (Last Value)",
-    reason: "Insufficient history — using most recent observation",
-  },
+/**
+ * Derive confidence from data length (NOT from demand type).
+ * Mirrors the backend data-quality-tier logic.
+ */
+const deriveConfidence = (dataPoints: number): "High" | "Medium" | "Low" => {
+  if (dataPoints >= 180) return "High";   // ~6 months daily
+  if (dataPoints >= 60) return "Medium";  // ~2 months daily
+  return "Low";
 };
 
 // ---------------------------------------------------------------------------
-// Confidence by demand type
+// Data Preprocessing Pipeline
 // ---------------------------------------------------------------------------
-const CONFIDENCE: Record<DemandType, "High" | "Medium" | "Low"> = {
-  Smooth: "High",
-  Seasonal: "Medium",
-  Erratic: "Low",
-  Intermittent: "Low",
-  New: "Low",
+
+/**
+ * Cap outliers using the IQR method.
+ * Values above Q3 + 1.5*IQR are capped; values below Q1 - 1.5*IQR are floored.
+ */
+const capOutliersIQR = (data: number[]): number[] => {
+  if (data.length < 4) return [...data];
+  const sorted = [...data].sort((a, b) => a - b);
+  const q1 = sorted[Math.floor(sorted.length * 0.25)];
+  const q3 = sorted[Math.floor(sorted.length * 0.75)];
+  const iqr = q3 - q1;
+  const lower = Math.max(0, q1 - 1.5 * iqr);
+  const upper = q3 + 1.5 * iqr;
+  return data.map((v) => Math.min(Math.max(v, lower), upper));
 };
 
-// ---------------------------------------------------------------------------
-// Model implementations — each returns a single base forecast value
-// ---------------------------------------------------------------------------
-const movingAverage = (series: number[], window = 7): number => {
-  const slice = series.slice(-Math.min(window, series.length));
-  return slice.reduce((s, v) => s + v, 0) / (slice.length || 1);
-};
-
-const weightedAverage = (series: number[], window = 7): number => {
-  const slice = series.slice(-Math.min(window, series.length));
-  let weightSum = 0;
-  let totalWeight = 0;
-  slice.forEach((v, i) => {
-    const w = i + 1;
-    weightSum += v * w;
-    totalWeight += w;
+/**
+ * Apply centered rolling average to smooth noisy daily data.
+ */
+const rollingSmooth = (data: number[], window = 7): number[] => {
+  if (data.length <= window) return [...data];
+  const half = Math.floor(window / 2);
+  return data.map((_, i) => {
+    const start = Math.max(0, i - half);
+    const end = Math.min(data.length, i + half + 1);
+    const slice = data.slice(start, end);
+    return slice.reduce((s, v) => s + v, 0) / slice.length;
   });
-  return totalWeight ? weightSum / totalWeight : 0;
 };
 
-const nonZeroAverage = (series: number[]): number => {
-  const nonZero = series.filter((v) => v !== 0);
-  if (!nonZero.length) return 0;
-  return nonZero.reduce((s, v) => s + v, 0) / nonZero.length;
+/**
+ * Full preprocessing: outlier cap → rolling smooth.
+ */
+const preprocessSeries = (raw: number[]): number[] => {
+  const capped = capOutliersIQR(raw);
+  return rollingSmooth(capped, 7);
 };
-
-const seasonalRepeat = (series: number[], cycle = 7): number => {
-  if (series.length < cycle) return series[series.length - 1] ?? 0;
-  return series[series.length - cycle];
-};
-
-const naiveForecast = (series: number[]): number =>
-  series.length ? series[series.length - 1] : 0;
 
 // ---------------------------------------------------------------------------
-// Apply the correct model
+// Trend & Seasonality Decomposition
 // ---------------------------------------------------------------------------
-const applyModel = (model: ModelKey, series: number[], step: number): number => {
-  switch (model) {
-    case "moving_avg":
-      return movingAverage(series);
-    case "weighted_avg":
-      return weightedAverage(series);
-    case "non_zero_avg":
-      return nonZeroAverage(series);
-    case "seasonal_repeat":
-      return seasonalRepeat(series, 7);
-    case "naive":
-      return naiveForecast(series);
-    default:
-      return movingAverage(series);
+
+/**
+ * Extract linear trend via least-squares regression.
+ * Returns { slope, intercept } so trend(t) = intercept + slope * t
+ */
+const extractLinearTrend = (series: number[]): { slope: number; intercept: number } => {
+  const n = series.length;
+  if (n < 2) return { slope: 0, intercept: series[0] ?? 0 };
+
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += series[i];
+    sumXY += i * series[i];
+    sumX2 += i * i;
   }
+  const denom = n * sumX2 - sumX * sumX;
+  const slope = denom !== 0 ? (n * sumXY - sumX * sumY) / denom : 0;
+  const intercept = (sumY - slope * sumX) / n;
+  return { slope, intercept };
+};
+
+/**
+ * Extract weekly seasonality pattern (7-day cycle).
+ * Returns an array of 7 additive offsets (Mon=0 … Sun=6).
+ */
+const extractWeeklySeasonality = (series: number[], trend: { slope: number; intercept: number }): number[] => {
+  if (series.length < 14) return new Array(7).fill(0); // need ≥2 weeks
+
+  // Detrend
+  const detrended = series.map((v, i) => v - (trend.intercept + trend.slope * i));
+
+  // Average by day-of-week position
+  const buckets: number[][] = Array.from({ length: 7 }, () => []);
+  detrended.forEach((v, i) => buckets[i % 7].push(v));
+
+  const pattern = buckets.map((b) =>
+    b.length ? b.reduce((s, v) => s + v, 0) / b.length : 0
+  );
+
+  // Center the pattern (subtract mean so it's purely additive)
+  const mean = pattern.reduce((s, v) => s + v, 0) / 7;
+  return pattern.map((v) => v - mean);
+};
+
+/**
+ * Prophet-style forecast: trend projection + seasonal overlay.
+ * Produces a single forecast value for step `futureStep` (1-indexed)
+ * given the preprocessed historical series.
+ */
+const prophetForecast = (
+  preprocessed: number[],
+  trend: { slope: number; intercept: number },
+  seasonality: number[],
+  futureStep: number,
+): number => {
+  const n = preprocessed.length;
+  // Project trend
+  const trendValue = trend.intercept + trend.slope * (n - 1 + futureStep);
+  // Add seasonal component
+  const dayIndex = (n - 1 + futureStep) % 7;
+  const seasonalValue = seasonality[dayIndex];
+  // Combine: trend + seasonality, floor at 0
+  return Math.max(0, trendValue + seasonalValue);
 };
 
 // ---------------------------------------------------------------------------
@@ -2132,7 +2158,7 @@ export const generateSmartForecast = (
         demandType: "New",
         confidence: "Low",
       },
-      model: MODEL_META.naive,
+      model: PROPHET_MODEL_META,
       historical: [],
       forecast: [],
       meta: {
@@ -2176,19 +2202,41 @@ export const generateSmartForecast = (
     value: roundTwo(salesByDate[date] ?? 0),
   }));
 
-  const series = history.map((h) => h.value);
+  const rawSeries = history.map((h) => h.value);
 
-  const demandType = classifyDemand(series);
-  const modelKey = selectModel(demandType);
-  const modelMeta = MODEL_META[modelKey];
+  // Classification is PURELY DESCRIPTIVE — used only for UI badges/insights
+  const demandType = classifyDemand(rawSeries);
 
-  const rolling = [...series];
+  // -----------------------------------------------------------------------
+  // PREPROCESSING: clean the series before decomposition
+  // -----------------------------------------------------------------------
+  const series = preprocessSeries(rawSeries);
+
+  // Update history values to show smoothed data on chart (cleaner visual)
+  const smoothedHistory = allDates.map((date, i) => ({
+    date,
+    value: roundTwo(series[i]),
+  }));
+
+  // -----------------------------------------------------------------------
+  // DECOMPOSITION: extract trend + weekly seasonality
+  // -----------------------------------------------------------------------
+  const trendLine = extractLinearTrend(series);
+  const weeklyPattern = extractWeeklySeasonality(series, trendLine);
+
   const lastHistoryDate = new Date(allDates[allDates.length - 1]);
   const forecastPoints: SmartForecastOutput["forecast"] = [];
   let appliedFestivalDays = 0;
 
+  // Confidence interval width based on data variability
+  const stdDev = series.length > 1
+    ? Math.sqrt(series.reduce((s, v) => s + (v - series.reduce((a, b) => a + b, 0) / series.length) ** 2, 0) / series.length)
+    : 0;
+  const intervalPct = series.length >= 180 ? 0.10 : series.length >= 60 ? 0.15 : 0.20;
+
   for (let i = 1; i <= config.forecastDurationDays; i++) {
-    const base = roundTwo(applyModel(modelKey, rolling, i));
+    // Prophet-style: trend projection + seasonal overlay
+    const base = roundTwo(prophetForecast(series, trendLine, weeklyPattern, i));
 
     const forecastDate = new Date(lastHistoryDate);
     forecastDate.setDate(forecastDate.getDate() + i);
@@ -2206,23 +2254,23 @@ export const generateSmartForecast = (
       appliedFestivalDays++;
     }
 
-    const p10 = roundTwo(finalValue * 0.9);
-    const p90 = roundTwo(finalValue * 1.1);
+    // Confidence intervals widen slightly over horizon
+    const horizonFactor = 1 + (i / config.forecastDurationDays) * 0.5;
+    const spread = Math.max(stdDev * intervalPct * horizonFactor, finalValue * intervalPct);
+    const p10 = roundTwo(Math.max(0, finalValue - spread));
+    const p90 = roundTwo(finalValue + spread);
 
     forecastPoints.push({
       date: dateStr,
-      value: finalValue,
-      p10,
-      p90,
+      forecast: finalValue,
+      lowerBound: p10,
+      upperBound: p90,
       festivalName,
       festivalImpact,
     });
-
-    rolling.push(base);
-    if (rolling.length > Math.max(config.windowSize, 30)) rolling.shift();
   }
 
-  const forecastValues = forecastPoints.map((f) => f.value);
+  const forecastValues = forecastPoints.map((f) => f.forecast);
   const forecastTotal = roundTwo(
     forecastValues.reduce((sum, value) => sum + value, 0)
   );
@@ -2234,7 +2282,7 @@ export const generateSmartForecast = (
 
   const firstForecast = forecastValues[0] ?? 0;
   const lastForecast = forecastValues[forecastValues.length - 1] ?? 0;
-  const trend: "increasing" | "decreasing" | "stable" =
+  const trendDirection: "increasing" | "decreasing" | "stable" =
     lastForecast > firstForecast * 1.02
       ? "increasing"
       : lastForecast < firstForecast * 0.98
@@ -2243,21 +2291,24 @@ export const generateSmartForecast = (
 
   const legacyForecast = forecastPoints.map((f) => ({
     date: f.date,
-    p10: f.p10,
-    p50: f.value,
-    p90: f.p90,
+    p10: f.lowerBound,
+    p50: f.forecast,
+    p90: f.upperBound,
   }));
+
+  // Confidence derived from data length, NOT demand type
+  const confidence = deriveConfidence(series.length);
 
   const smart: SmartForecastOutput = {
     summary: {
       forecastTotal,
       avgDailyDemand,
-      trend,
-      demandType,
-      confidence: CONFIDENCE[demandType],
+      trend: trendDirection,
+      demandType,          // kept for UI badges — purely descriptive
+      confidence,          // derived from data points, not demand classification
     },
-    model: modelMeta,
-    historical: history,
+    model: PROPHET_MODEL_META,   // always Prophet — no model selection
+    historical: smoothedHistory,
     forecast: forecastPoints,
     meta: {
       appliedFestivalDays,
@@ -2268,7 +2319,7 @@ export const generateSmartForecast = (
   return {
     sectionName: "Overall Demand Forecast",
     chart: {
-      history,
+      history: smoothedHistory,
       forecast: legacyForecast,
     },
     metrics: {
@@ -2279,10 +2330,11 @@ export const generateSmartForecast = (
     },
     table: forecastPoints.map((f) => ({
       date: f.date,
-      forecast: f.value,
-      lowerBound: f.p10,
-      upperBound: f.p90,
+      forecast: f.forecast,
+      lowerBound: f.lowerBound,
+      upperBound: f.upperBound,
     })),
     smart,
   };
 };
+

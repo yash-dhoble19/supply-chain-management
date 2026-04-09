@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import database
 import models
-from api.routes import ai, dashboard, inventory, logistics, orders, procurement, products
+from api.routes import ai, dashboard, forecast, forecast_ai, inventory, logistics, orders, procurement, products
 from config import settings
 from services.logistics_tracker import realtime_manager
 
@@ -33,6 +33,8 @@ app.include_router(orders.router)
 app.include_router(logistics.router)
 app.include_router(ai.router)
 app.include_router(inventory.router)
+app.include_router(forecast_ai.router)
+app.include_router(forecast.router)
 
 
 @app.on_event("startup")

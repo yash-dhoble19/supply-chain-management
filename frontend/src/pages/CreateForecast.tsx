@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from "react";
+
 import type { ChangeEvent, DragEvent, MouseEvent } from "react";
 import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
@@ -10,6 +11,13 @@ import {
   type SmartForecastOutput,
 } from "./forecastEngine";
 import ForecastOutput from "./ForecastOutput";
+import { setLatestForecastSnapshot } from "../services/forecastStore";
+import type {
+  ForecastLevel,
+  LocationField,
+  ProductOption,
+  ForecastSnapshot,
+} from "../types/forecast.types";
 
 type CsvRow = Record<string, string>;
 
@@ -74,8 +82,6 @@ interface DemandInsightModalInfo {
   list: string[];
   more: string | null;
 }
-
-type ForecastLevel = "overall" | "product" | "location" | "combined";
 
 type UploadErrorType = "unsupported" | "empty" | "corrupt" | "tooLarge" | null;
 
@@ -1295,6 +1301,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const [forecastGranularity, setForecastGranularity] = useState("Weekly");
   const [forecastDurationDays, setForecastDurationDays] = useState(15);
   const [forecastRequested, setForecastRequested] = useState(false);
+  const [hasSavedForecast, setHasSavedForecast] = useState(false);
   const [heroAlert, setHeroAlert] = useState<string | null>(null);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults | null>(null);
   const [demandInsightModal, setDemandInsightModal] = useState<DemandInsightModalInfo | null>(null);
@@ -1340,7 +1347,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     return options;
   }, [orderedProductKeys, productMetadata]);
 
-  const productOptions = useMemo(() => {
+  const productOptions = useMemo<ProductOption[]>(() => {
     return orderedProductKeys
       .filter((key) =>
         selectedCategory
@@ -1371,6 +1378,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     ];
   }, [overallForecastSection]);
 
+
   const findColumnForKeywords = (keywords: string[]) => {
     const normalizedKeywords = keywords.map((keyword) =>
       normalizeColumnName(keyword)
@@ -1381,7 +1389,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     });
   };
 
-  const locationFieldConfig = useMemo(() => {
+  const locationFieldConfig = useMemo<LocationField[]>(() => {
     return LOCATION_FIELD_PRIORITY.map((field) => {
       const column = findColumnForKeywords(field.keywords);
       return column ? { ...field, column } : null;
@@ -1408,6 +1416,41 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     });
     return result;
   }, [locationFieldConfig, cleanedRows, rawRows]);
+
+  useEffect(() => {
+    if (!overallForecastSection || !forecastRequested || hasSavedForecast) {
+      return;
+    }
+    setLatestForecastSnapshot({
+      section: overallForecastSection,
+      forecastLevel,
+      productCategoryOptions,
+      productOptions,
+      selectedCategory,
+      selectedProductKey,
+      locationFieldConfig,
+      locationOptionsByField,
+      locationSelections,
+      insightHighlights,
+    });
+    setHasSavedForecast(true);
+    setForecastRequested(false);
+    onNavigate("demandForecasting");
+  }, [
+    overallForecastSection,
+    forecastRequested,
+    hasSavedForecast,
+    forecastLevel,
+    productCategoryOptions,
+    productOptions,
+    selectedCategory,
+    selectedProductKey,
+    locationFieldConfig,
+    locationOptionsByField,
+    locationSelections,
+    insightHighlights,
+    onNavigate,
+  ]);
 
   useEffect(() => {
     setSelectedCategory("");
@@ -2058,22 +2101,7 @@ const togglePreview = () => {
     }
   }, [visibleForecastDurations, forecastDurationDays]);
 
-  useEffect(() => {
-    if (!lastConfirmedData) {
-      setOverallForecastSection(null);
-      return;
-    }
-    const section = generateSmartForecast(
-      lastConfirmedData.cleaned,
-      {
-        dateColumn: lastConfirmedData.mapping.dateColumn,
-        salesColumn: lastConfirmedData.mapping.salesColumn,
-      },
-      { windowSize: 7, forecastDurationDays },
-      lastConfirmedData.mapping,
-    );
-    setOverallForecastSection(section);
-  }, [forecastDurationDays, lastConfirmedData]);
+
 
   const forecastDurationHelperText = maxForecastDays
     ? `Historical coverage (${availableDataDays} day${availableDataDays === 1 ? "" : "s"}) supports forecasting up to ${maxForecastDays} day${maxForecastDays === 1 ? "" : "s"}.`
@@ -2175,6 +2203,7 @@ const togglePreview = () => {
     setUploadError(options?.nextError ?? null);
     setHeroAlert(null);
     setForecastRequested(false);
+    setHasSavedForecast(false);
   };
 
   const swallowLargeFileError = (error: unknown) => {
@@ -2204,8 +2233,114 @@ const togglePreview = () => {
     });
   };
 
+  const [isGenerating, setIsGenerating] = useState(false);
+
   const handleGenerateForecast = () => {
     setForecastRequested(true);
+    
+    if (!lastConfirmedData) {
+      console.warn("Generate forecast clicked but no data is confirmed.");
+      setStatusMessage("No data detected. Please upload and confirm mapping first.");
+      setOverallForecastSection(null);
+      return;
+    }
+    const { cleaned, mapping } = lastConfirmedData;
+    if (!mapping.dateColumn || !mapping.salesColumn || !cleaned.length) {
+      console.error("Missing column mapping:", mapping);
+      setStatusMessage("Missing required column mapping (Date/Sales).");
+      setOverallForecastSection(null);
+      return;
+    }
+
+    const dates: string[] = [];
+    const sales: number[] = [];
+
+    let filtered = cleaned;
+    // Apply filtering based on selection if level is not overall
+    if ((forecastLevel === "product" || forecastLevel === "combined") && selectedProductKey) {
+      filtered = cleaned.filter((row) => row[mapping.productColumn] === selectedProductKey);
+    } else if ((forecastLevel === "product" || forecastLevel === "combined") && selectedCategory) {
+      filtered = cleaned.filter(
+        (row) => productMetadata[row[mapping.productColumn]]?.productCategory === selectedCategory
+      );
+    }
+
+    filtered.forEach((row) => {
+      const dateVal = row[mapping.dateColumn];
+      const salesVal = parseFloat(row[mapping.salesColumn] || "");
+      if (dateVal && !isNaN(salesVal)) {
+        dates.push(String(dateVal).slice(0, 10));
+        sales.push(salesVal);
+      }
+    });
+
+    if (dates.length < 2) {
+      console.error("Insufficient data points after filtering:", dates.length);
+      setStatusMessage("Insufficient data points found for the selected filter. Need at least 2 points.");
+      setOverallForecastSection(null);
+      return;
+    }
+
+    console.log(`Starting forecast generation for ${dates.length} points...`);
+
+    setIsGenerating(true);
+    setOverallForecastSection(null);
+    setStatusMessage("Running Facebook Prophet model on backend...");
+
+    const apiBase = (import.meta as any).env?.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+
+    fetch(apiBase + "/forecast/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dates,
+        sales,
+        forecastDays: forecastDurationDays,
+        timeGrouping: forecastGranularity,
+      }),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((errData) => {
+            throw new Error(errData.detail || "Server error");
+          });
+        }
+        return res.json();
+      })
+      .then((data) => {
+        setIsGenerating(false);
+        if (data.status === "success") {
+          setOverallForecastSection(data);
+          setStatusMessage("Prophet forecast generated successfully. Saving and redirecting...");
+          
+          // Save to global store so it shows up on the main demand page
+          setLatestForecastSnapshot({
+            section: data,
+            forecastLevel,
+            productCategoryOptions,
+            productOptions,
+            selectedCategory,
+            selectedProductKey,
+            locationFieldConfig,
+            locationOptionsByField,
+            locationSelections,
+            insightHighlights,
+          });
+          
+          console.log("Forecast saved to store. Navigating...");
+          // Small delay ensures store notifyListeners finishes if there's any sync work
+          setTimeout(() => onNavigate("demandForecasting"), 300);
+        } else {
+          setStatusMessage(data.detail || data.message || "Forecast failed.");
+          setOverallForecastSection(null);
+        }
+      })
+      .catch((err) => {
+        setIsGenerating(false);
+        console.error("Prophet backend error:", err);
+        setStatusMessage(`Backend error: ${err.message}. Ensure backend is running.`);
+        setOverallForecastSection(null);
+      });
   };
 
   const toggleLocationColumn = (column: string) => {
@@ -2367,6 +2502,54 @@ const togglePreview = () => {
     } catch (error) {
       swallowLargeFileError(error);
     }
+  };
+
+  const loadSampleData = () => {
+    const headers = ["Order Date", "Product Name", "Product Category", "Sales"];
+    const rows: CsvRow[] = [];
+    const products = [
+      { name: "Headphones", cat: "Electronics" },
+      { name: "Sneakers", cat: "Apparel" },
+      { name: "Smartwatch", cat: "Electronics" }
+    ];
+    
+    const now = new Date();
+    // Generate 2 years of daily data
+    for (let i = 730; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      products.forEach(p => {
+        // Generate some seasonal/trended sales
+        const base = p.name === "Headphones" ? 50 : 30;
+        const trend = (730 - i) / 10;
+        const seasonality = Math.sin(i / 10) * 20;
+        const noise = Math.random() * 10;
+        const sales = Math.max(0, Math.round(base + trend + seasonality + noise));
+        
+        const row: CsvRow = {
+          "Order Date": dateStr,
+          "Product Name": p.name,
+          "Product Category": p.cat,
+          "Sales": sales.toString()
+        };
+        // Add some noise columns
+        row["Store ID"] = "S001";
+        row["Region"] = "West";
+        rows.push(row);
+      });
+    }
+
+    setColumns(headers.concat(["Store ID", "Region"]));
+    setRawRows(rows);
+    setDateColumn("Order Date");
+    setSalesColumn("Sales");
+    setProductColumn("Product Name");
+    setDataProductCategoryColumn("Product Category");
+    setStoreColumn("Store ID");
+    setUploadedFileName("sample_demand_data.csv");
+    setStatusMessage("Loaded 2 years of sample data. Click 'Confirm Mapping' to continue.");
   };
 
   const handleConfirmMapping = () => {
@@ -2760,6 +2943,16 @@ const togglePreview = () => {
                         <>
                           <p>Drop CSV file here</p>
                           <p>Or browse files on your system</p>
+                          <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: 12 }}>
+                            <button
+                              type="button"
+                              className="confirm-mapping demand-cta"
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); loadSampleData(); }}
+                              style={{ background: "#4f46e5", padding: "8px 16px", fontSize: "0.85rem" }}
+                            >
+                              🚀 Load Sample Data
+                            </button>
+                          </div>
                           <p className="upload-secondary">
                             [Supported formats: CSV (Recommended), Excel (.xlsx, .xls)]
                           </p>
@@ -3244,6 +3437,47 @@ const togglePreview = () => {
                           {timeGroupingHelperText}
                         </small>
                       </label>
+
+                      {(forecastLevel === "product" || forecastLevel === "combined") && (
+                        <>
+                          {productCategoryOptions.length > 0 && (
+                            <label className="config-field">
+                              <span>Category Filter</span>
+                              <select
+                                value={selectedCategory}
+                                onChange={(event) => {
+                                  setSelectedCategory(event.target.value);
+                                  setSelectedProductKey("");
+                                }}
+                              >
+                                <option value="">All Categories</option>
+                                {productCategoryOptions.map((cat) => (
+                                  <option key={cat} value={cat}>
+                                    {cat}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          <label className="config-field">
+                            <span>Select Product (Name & ID)</span>
+                            <select
+                              value={selectedProductKey}
+                              onChange={(event) => setSelectedProductKey(event.target.value)}
+                            >
+                              <option value="">{selectedCategory ? `All ${selectedCategory} Products` : "All Products (Combined)"}</option>
+                              {productOptions.map((option) => (
+                                <option key={option.key} value={option.key}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                            <small className="mapping-helper">
+                              Target specific inventory for higher accuracy
+                            </small>
+                          </label>
+                        </>
+                      )}
                       <div className="config-field config-toggle-field">
                         <button
                           type="button"
@@ -3259,46 +3493,6 @@ const togglePreview = () => {
                   </section>
                 )}
 
-                {forecastRequested && overallForecastSection && (
-                  <>
-                    <div data-step="generate">
-                      <ForecastOutput
-                        section={overallForecastSection}
-                        forecastLevel={forecastLevel}
-                        productCategoryOptions={productCategoryOptions}
-                        productOptions={productOptions}
-                        selectedCategory={selectedCategory}
-                        selectedProductKey={selectedProductKey}
-                        onCategoryChange={(v) => {
-                          setSelectedCategory(v);
-                          setSelectedProductKey("");
-                        }}
-                        onProductChange={setSelectedProductKey}
-                        locationFieldConfig={locationFieldConfig}
-                        locationOptionsByField={locationOptionsByField}
-                        locationSelections={locationSelections}
-                        onLocationChange={updateLocationSelection}
-                      />
-                    </div>
-                    <section className="forecast-section insights-section" data-step="insights">
-                      <div className="forecast-section-header">
-                        <div>
-                          <h3>Insights</h3>
-                          <p className="forecast-section-subtitle">
-                            AI explains what is driving demand and where risk lives.
-                          </p>
-                        </div>
-                      </div>
-                      <div className="insights-summary">
-                        {insightHighlights.map((line, index) => (
-                          <p className="mapping-helper" key={`${line}-${index}`}>
-                            {line}
-                          </p>
-                        ))}
-                      </div>
-                    </section>
-                  </>
-                )}
               </>
             )}
           </>
