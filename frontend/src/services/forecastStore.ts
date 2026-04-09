@@ -40,5 +40,7 @@ export const clearLatestForecastSnapshot = () => {
 
 export const subscribeToForecastUpdates = (listener: ForecastListener) => {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 };

@@ -1299,6 +1299,7 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
   const [selectedAdditionalFeatures, setSelectedAdditionalFeatures] = useState<string[]>([]);
   const [selectedLocationColumns, setSelectedLocationColumns] = useState<string[]>([]);
   const [isDropzoneActive, setIsDropzoneActive] = useState(false);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [forecastGranularity, setForecastGranularity] = useState("Weekly");
   const [forecastDurationDays, setForecastDurationDays] = useState(15);
@@ -1437,7 +1438,8 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
     });
     setHasSavedForecast(true);
     setForecastRequested(false);
-    onNavigate("demandForecasting");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    // // onNavigate("demandForecasting");
   }, [
     overallForecastSection,
     forecastRequested,
@@ -1470,6 +1472,13 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       return next;
     });
   }, [locationFieldConfig]);
+
+  
+  useEffect(() => {
+    if (overallForecastSection && resultsRef.current) {
+      resultsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [overallForecastSection]);
 
   const updateLocationSelection = (fieldKey: string, value: string) => {
     setLocationSelections((prev) => ({
@@ -2203,6 +2212,7 @@ const togglePreview = () => {
     setUploadError(options?.nextError ?? null);
     setHeroAlert(null);
     setForecastRequested(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
     setHasSavedForecast(false);
   };
 
@@ -2331,7 +2341,7 @@ const togglePreview = () => {
           
           console.log("Forecast saved to store. Navigating...");
           // Small delay ensures store notifyListeners finishes if there's any sync work
-          setTimeout(() => onNavigate("demandForecasting"), 300);
+          // // setTimeout(() => onNavigate("demandForecasting"), 300);
         } else {
           setStatusMessage(data.detail || data.message || "Forecast failed.");
           setOverallForecastSection(null);
@@ -2563,6 +2573,7 @@ const togglePreview = () => {
     const mapping = buildCurrentMapping();
     setIsValidating(true);
     setForecastRequested(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
     setValidationModal(null);
     setDataSummary(null);
     setPreviewExpanded(false);
@@ -3315,6 +3326,8 @@ const togglePreview = () => {
                 )}
               </div>
             </section>
+          </>
+        )}
             {hasParsedData && (
               <>
                 <section className="forecast-section dual-demand-intelligence" data-step="demand">
@@ -3489,7 +3502,45 @@ const togglePreview = () => {
                   </section>
                 )}
 
-                {overallForecastSection && (
+                            </>
+                          )}
+                        </div>
+
+            {overallForecastSection && (
+              <div ref={resultsRef} className="forecast-results-container animate-fade-in" style={{ marginTop: 60, borderTop: "2px solid #e2e8f0", paddingTop: 40, paddingBottom: 60 }}>
+                  <div className="forecast-results-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
+                    <h2 style={{ fontSize: "1.85rem", fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>Intelligence Analysis Dashboard</h2>
+                    <button 
+                      className="demand-cta" 
+                      style={{ 
+                        width: "fit-content", 
+                        padding: "12px 28px", 
+                        background: "linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)", 
+                        borderRadius: 14,
+                        boxShadow: "0 10px 15px -3px rgba(79, 70, 229, 0.4)",
+                        border: "none",
+                        color: "white",
+                        fontWeight: 600,
+                        cursor: "pointer"
+                      }} 
+                      onClick={() => {
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                        setTimeout(() => {
+                          setOverallForecastSection(null);
+                          setHasParsedData(false);
+                          setDataSummary(null);
+                          setUploadedFileName("");
+                          setPreviewRows([]);
+                          setColumns([]);
+                          setCleanedRows([]);
+                          setStatusMessage("");
+                          setHasSavedForecast(false);
+                        }, 400);
+                      }}
+                    >
+                      🚀 Create New Forecast
+                    </button>
+                  </div>
                   <ForecastOutput
                     section={overallForecastSection}
                     forecastLevel={forecastLevel}
@@ -3504,14 +3555,9 @@ const togglePreview = () => {
                     locationSelections={locationSelections}
                     onLocationChange={updateLocationSelection}
                   />
-                )}
-
-              </>
+              </div>
             )}
-          </>
-        )}
           </div>
-        </div>
       </main>
 
       {validationModal && (
