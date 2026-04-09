@@ -567,7 +567,7 @@ export default function ForecastOutput({
 
       {(forecastLevel === "product" || forecastLevel === "combined") && (
         <div className="forecast-flow-panel" style={{ marginTop: 18 }}>
-          <label className="config-field">
+          <label className="config-field" style={{ padding: "16px", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "12px", boxShadow: "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)" }}>
             <span>Category</span>
             <select
               value={selectedCategory}
@@ -581,7 +581,7 @@ export default function ForecastOutput({
               ))}
             </select>
           </label>
-          <label className="config-field">
+          <label className="config-field" style={{ padding: "16px", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "12px", boxShadow: "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)" }}>
             <span>Product</span>
             <select
               value={selectedProductKey}
@@ -604,7 +604,7 @@ export default function ForecastOutput({
         <div className="forecast-flow-panel" style={{ marginTop: 18 }}>
           {locationFieldConfig.length ? (
             locationFieldConfig.map((field) => (
-              <label className="config-field" key={field.key}>
+              <label className="config-field" style={{ padding: "16px", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "12px", boxShadow: "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)" }} key={field.key}>
                 <span>
                   {field.label}
                   <small className="mapping-helper" style={{ fontSize: "0.8rem", marginLeft: 4 }}>
@@ -643,7 +643,7 @@ export default function ForecastOutput({
         </div>
 
         <div className="simulation-controls" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "20px", marginBottom: 24 }}>
-          <label className="config-field">
+          <label className="config-field" style={{ padding: "16px", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "12px", boxShadow: "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)" }}>
             <span>Price Change (%)</span>
             <input 
               type="number" 
@@ -653,7 +653,7 @@ export default function ForecastOutput({
             />
             <small className="mapping-helper">Positive = Price Up = Lower Demand</small>
           </label>
-          <label className="config-field">
+          <label className="config-field" style={{ padding: "16px", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "12px", boxShadow: "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)" }}>
             <span>Discount (%)</span>
             <input 
               type="number" 
@@ -663,21 +663,21 @@ export default function ForecastOutput({
               min="0"
             />
           </label>
-          <label className="config-field">
+          <label className="config-field" style={{ padding: "16px", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "12px", boxShadow: "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)" }}>
             <span>Marketing Campaign</span>
             <select value={simMarketing ? "yes" : "no"} onChange={(e) => { setSimMarketing(e.target.value === "yes"); setSimulationActive(false); }}>
               <option value="no">No Extra Promotion</option>
               <option value="yes">Aggressive Campaign (+18%)</option>
             </select>
           </label>
-          <label className="config-field">
+          <label className="config-field" style={{ padding: "16px", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "12px", boxShadow: "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)" }}>
             <span>Competitor Entry</span>
             <select value={simCompetitor ? "yes" : "no"} onChange={(e) => { setSimCompetitor(e.target.value === "yes"); setSimulationActive(false); }}>
               <option value="no">Stable Market</option>
               <option value="yes">New Competitor (-15%)</option>
             </select>
           </label>
-          <label className="config-field">
+          <label className="config-field" style={{ padding: "16px", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "12px", boxShadow: "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)" }}>
             <span>Weather Impact</span>
             <select value={simWeather} onChange={(e) => { setSimWeather(e.target.value as any); setSimulationActive(false); }}>
               <option value="neutral">Neutral Condition</option>
@@ -685,7 +685,7 @@ export default function ForecastOutput({
               <option value="unfavorable">Unfavorable Forecast (-10%)</option>
             </select>
           </label>
-          <label className="config-field">
+          <label className="config-field" style={{ padding: "16px", background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "12px", boxShadow: "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)" }}>
             <span>External Festival</span>
             <select value={simFestival ? "yes" : "no"} onChange={(e) => { setSimFestival(e.target.value === "yes"); setSimulationActive(false); }}>
               <option value="no">Regular Period</option>
@@ -713,7 +713,7 @@ export default function ForecastOutput({
                <div style={{ fontSize: "0.95rem", color: "#0369a1" }}>Estimated total units over horizon</div>
             </div>
                
-            <div style={{ padding: 24, background: simulation.pct >= 0 ? "#f0fdf4" : "#fef2f2", borderRadius: 16, border: `1px solid ${simulation.pct >= 0 ? "#bbf7d0" : "#fecaca"}`, textAlign: "center", boxShadow: `0 2px 10px ${simulation.pct >= 0 ? "rgba(22, 101, 52, 0.05)" : "rgba(153, 27, 27, 0.05)"}` }}>
+            <div style={{ padding: 24, background: simulation.pct >= 0 ? "#f0fdf4" : "#fef2f2", borderRadius: 16, border: `1px solid ${simulation.pct >= 0 ? "#bbf7d0" : "#fecaca"}`, textAlign: "center", boxShadow: `0 2px 10px ${simulation.pct >= 0 ? "rgba(22, 101, 52, 0.05)" : "rgba(153, 27, 27, 0.05)" }}` }}>
                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: simulation.pct >= 0 ? "#166534" : "#991b1b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Impact Summary</span>
                <div style={{ fontSize: "2.5rem", fontWeight: 900, color: simulation.pct >= 0 ? "#166534" : "#991b1b", margin: "8px 0" }}>
                  {simulation.pct >= 0 ? "+" : ""}{simulation.pct.toFixed(1)}%
