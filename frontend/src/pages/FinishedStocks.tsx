@@ -875,6 +875,7 @@ export function FinishedStocks({ activePage, onNavigate }: FinishedStocksProps) 
                     <th className="px-4 py-3 text-left font-semibold text-secondary">Quantity</th>
                     <th className="px-4 py-3 text-left font-semibold text-secondary">Status</th>
                     <th className="px-4 py-3 text-left font-semibold text-secondary">Driver</th>
+                    <th className="px-4 py-3 text-right font-semibold text-secondary">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/10 bg-surface-container-lowest">
@@ -893,6 +894,24 @@ export function FinishedStocks({ activePage, onNavigate }: FinishedStocksProps) 
                         </span>
                       </td>
                       <td className="px-4 py-3 text-secondary">{order.driver_id ? `Assigned (ID: ${order.driver_id})` : "Awaiting Assignment"}</td>
+                      <td className="px-4 py-3 text-right">
+                        {!order.driver_id && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              sessionStorage.setItem("pendingLogisticsOrder", JSON.stringify({
+                                destination: order.retailer_location || "Central Retail Hub",
+                                productName: order.product_name,
+                                quantity: order.quantity
+                              }));
+                              onNavigate("logistics");
+                            }}
+                            className="rounded-full bg-primary/10 px-4 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition-colors"
+                          >
+                            Schedule
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

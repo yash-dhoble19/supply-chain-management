@@ -88,6 +88,24 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
     selectedShipmentIdRef.current = selectedShipmentId;
   }, [selectedShipmentId]);
 
+  useEffect(() => {
+    const pendingOrderStr = sessionStorage.getItem("pendingLogisticsOrder");
+    if (pendingOrderStr) {
+      try {
+        const payload = JSON.parse(pendingOrderStr);
+        setPlannerForm((prev) => ({
+          ...prev,
+          origin: "Main Manufacturing Factory",
+          destination: payload.destination || "",
+          loadType: "STANDARD",
+        }));
+        sessionStorage.removeItem("pendingLogisticsOrder");
+      } catch (e) {
+        console.error("Failed to parse pending logistics order", e);
+      }
+    }
+  }, []);
+
   const fetchShipments = useCallback(async (signal?: AbortSignal) => {
     try {
       const response = await logisticsService.listShipments(signal);
