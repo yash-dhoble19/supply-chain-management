@@ -633,13 +633,13 @@ export default function ForecastOutput({
         )}
 
       <div className="forecast-flow-panel simulation-engine" style={{ marginTop: 24, padding: "24px", background: "#ffffff", borderRadius: 16, border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)" }}>
-        <div style={{ marginBottom: 20, borderBottom: "1px solid #f1f5f9", paddingBottom: 16 }}>
-          <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: 10, color: "#0f172a", fontSize: "1.25rem" }}>
-            <span style={{ fontSize: "1.4rem" }}>🎯</span> Business Scenario Simulator
-          </h3>
-          <p className="mapping-helper" style={{ margin: "6px 0 0 0", color: "#64748b" }}>
-            Model complex business decisions and external events to see their net impact on supply chain demand.
-          </p>
+        <div className="forecast-section-header" style={{ marginBottom: 24, borderBottom: "1px solid #f1f5f9", paddingBottom: 16 }}>
+          <div>
+            <h3 style={{ margin: "2px 0 4px", fontSize: "1.45rem", fontWeight: 700, color: "#0f172a" }}>🎯 Business Scenario Simulator</h3>
+            <p className="forecast-section-subtitle">
+              Model complex business decisions and external events to see their net impact on supply chain demand.
+            </p>
+          </div>
         </div>
 
         <div className="simulation-controls" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "20px", marginBottom: 24 }}>
