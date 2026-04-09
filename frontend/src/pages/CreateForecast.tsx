@@ -157,6 +157,25 @@ const FORECAST_DURATION_OPTIONS = [
   { value: 180, label: "180 Days" },
 ];
 
+type ForecastStepKey =
+  | "upload"
+  | "mapping"
+  | "summary"
+  | "demand"
+  | "config"
+  | "generate"
+  | "insights";
+
+const FORECAST_STEPS: { key: ForecastStepKey; label: string }[] = [
+  { key: "upload", label: "Upload & Inspect Data" },
+  { key: "mapping", label: "Column Mapping" },
+  { key: "summary", label: "Data Summary" },
+  { key: "demand", label: "Demand Intelligence" },
+  { key: "config", label: "Forecast Configuration" },
+  { key: "generate", label: "Generate Forecast" },
+  { key: "insights", label: "Insights" },
+];
+
 type DemandType = "Smooth" | "Erratic" | "Intermittent" | "New" | "Seasonal";
 
 interface DemandAnalysisResult {
@@ -1340,6 +1359,18 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
       });
   }, [orderedProductKeys, productMetadata, selectedCategory]);
 
+  const insightHighlights = useMemo(() => {
+    if (!overallForecastSection) {
+      return ["Generate a forecast to unlock curated insights."];
+    }
+    const { summary, model } = overallForecastSection.smart;
+    const trendLabel = summary.trend || "steady";
+    return [
+      `${summary.demandType} demand with a ${trendLabel} trend at ${summary.confidence} confidence.`,
+      `Model: ${model.name} — ${model.reason}`,
+    ];
+  }, [overallForecastSection]);
+
   const findColumnForKeywords = (keywords: string[]) => {
     const normalizedKeywords = keywords.map((keyword) =>
       normalizeColumnName(keyword)
@@ -1886,6 +1917,42 @@ const togglePreview = () => {
           : uploadError === "tooLarge"
             ? FILE_TOO_LARGE_MESSAGE
             : null;
+
+  const uploadComplete = hasParsedData;
+  const mappingComplete = Boolean(dataSummary);
+  const summaryComplete = Boolean(dataSummary);
+  const demandComplete = Boolean(analysisResults);
+  const configComplete = forecastRequested;
+  const generateComplete = Boolean(overallForecastSection);
+
+  const completionFlags: Record<ForecastStepKey, boolean> = {
+    upload: uploadComplete,
+    mapping: mappingComplete,
+    summary: summaryComplete,
+    demand: demandComplete,
+    config: configComplete,
+    generate: generateComplete,
+    insights: false,
+  };
+
+  const firstIncompleteStepIndex = FORECAST_STEPS.findIndex(
+    (step) => !completionFlags[step.key]
+  );
+  const activeForecastStepIndex =
+    firstIncompleteStepIndex !== -1 ? firstIncompleteStepIndex : FORECAST_STEPS.length - 1;
+
+  const handleStepperClick = (stepKey: ForecastStepKey, index: number) => {
+    if (index >= activeForecastStepIndex) {
+      return;
+    }
+    if (typeof document === "undefined") {
+      return;
+    }
+    const target = document.querySelector(`[data-step="${stepKey}"]`);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
 
   const buildCurrentMapping = (): DataMapping => ({
     dateColumn,
@@ -2601,7 +2668,37 @@ const togglePreview = () => {
             ) : null}
             <div className="demand-content">
               <div className="forecast-workspace">
-                <section className="forecast-section upload-section">
+                <div className="forecast-stepper-card">
+                  <p className="forecast-section-kicker">
+                    Step {activeForecastStepIndex + 1} of {FORECAST_STEPS.length}
+                  </p>
+                  <div className="forecast-stepper">
+                    {FORECAST_STEPS.map((step, index) => {
+                      const status =
+                        index < activeForecastStepIndex
+                          ? "completed"
+                          : index === activeForecastStepIndex
+                            ? "active"
+                            : "pending";
+                      return (
+                        <div key={step.key} className={`forecast-stepper-stage ${status}`}>
+                          <button
+                            type="button"
+                            className="forecast-stepper-button"
+                            onClick={() => handleStepperClick(step.key, index)}
+                            disabled={status !== "completed"}
+                          >
+                            <span className="forecast-stepper-circle" aria-hidden="true">
+                              {status === "completed" ? "✔" : index + 1}
+                            </span>
+                            <span className="forecast-stepper-label">{step.label}</span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <section className="forecast-section upload-section" data-step="upload">
                   <div className="forecast-section-header">
                     <div>
                       <h3>Upload &amp; Inspect</h3>
@@ -2678,7 +2775,7 @@ const togglePreview = () => {
               <>
                 {dataSummary ? (
                   <>
-                    <section className="forecast-section data-summary-card">
+                    <section className="forecast-section data-summary-card" data-step="summary">
                 <div className="data-summary-title">
                   <h3>Data summary</h3>
                   <p>Cleaned dataset ready for forecasting</p>
@@ -2730,12 +2827,11 @@ const togglePreview = () => {
                 ) : null}
                 <p className="summary-status">Status: {dataSummary.status}</p>
                     </section>
-                    
                   </>
                 ) : null}
 
             {!dataSummary && (
-              <section className="forecast-section mapping-section">
+              <section className="forecast-section mapping-section" data-step="mapping">
                 <div className="forecast-section-header">
                   <div>
                     <h3>Column Mapping</h3>
@@ -3026,7 +3122,7 @@ const togglePreview = () => {
             </section>
             {hasParsedData && (
               <>
-                <section className="forecast-section dual-demand-intelligence">
+                <section className="forecast-section dual-demand-intelligence" data-step="demand">
                   <div className="dual-demand-header">
                     <h3>Demand Intelligence Engine</h3>
                     <p>
@@ -3069,7 +3165,7 @@ const togglePreview = () => {
                   </div>
                 </section>
                 {dataSummary && (
-                  <section className="forecast-section config-section">
+                  <section className="forecast-section config-section" data-step="config">
                     <div className="forecast-section-header">
                       <div>
                         <h3>Forecast Configuration</h3>
@@ -3164,23 +3260,44 @@ const togglePreview = () => {
                 )}
 
                 {forecastRequested && overallForecastSection && (
-                  <ForecastOutput
-                    section={overallForecastSection}
-                    forecastLevel={forecastLevel}
-                    productCategoryOptions={productCategoryOptions}
-                    productOptions={productOptions}
-                    selectedCategory={selectedCategory}
-                    selectedProductKey={selectedProductKey}
-                    onCategoryChange={(v) => {
-                      setSelectedCategory(v);
-                      setSelectedProductKey("");
-                    }}
-                    onProductChange={setSelectedProductKey}
-                    locationFieldConfig={locationFieldConfig}
-                    locationOptionsByField={locationOptionsByField}
-                    locationSelections={locationSelections}
-                    onLocationChange={updateLocationSelection}
-                  />
+                  <>
+                    <div data-step="generate">
+                      <ForecastOutput
+                        section={overallForecastSection}
+                        forecastLevel={forecastLevel}
+                        productCategoryOptions={productCategoryOptions}
+                        productOptions={productOptions}
+                        selectedCategory={selectedCategory}
+                        selectedProductKey={selectedProductKey}
+                        onCategoryChange={(v) => {
+                          setSelectedCategory(v);
+                          setSelectedProductKey("");
+                        }}
+                        onProductChange={setSelectedProductKey}
+                        locationFieldConfig={locationFieldConfig}
+                        locationOptionsByField={locationOptionsByField}
+                        locationSelections={locationSelections}
+                        onLocationChange={updateLocationSelection}
+                      />
+                    </div>
+                    <section className="forecast-section insights-section" data-step="insights">
+                      <div className="forecast-section-header">
+                        <div>
+                          <h3>Insights</h3>
+                          <p className="forecast-section-subtitle">
+                            AI explains what is driving demand and where risk lives.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="insights-summary">
+                        {insightHighlights.map((line, index) => (
+                          <p className="mapping-helper" key={`${line}-${index}`}>
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                    </section>
+                  </>
                 )}
               </>
             )}
