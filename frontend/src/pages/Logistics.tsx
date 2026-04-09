@@ -101,7 +101,7 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
         const payload = JSON.parse(pendingOrderStr);
         setPlannerForm((prev) => ({
           ...prev,
-          origin: "Main Manufacturing Factory",
+          origin: "MIDC Amravati",
           destination: payload.destination || "",
           productName: payload.productName || "",
           quantity: payload.quantity ? payload.quantity.toString() : "",
