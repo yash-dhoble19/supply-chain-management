@@ -1573,7 +1573,6 @@ export function CreateForecast({ activePage, onNavigate }: CreateForecastProps) 
 
 const renderDemandList = (
   analysis: DemandAnalysisResult,
-  keyPrefix: string,
   onView: (type: DemandType) => void
 ) => {
   const demandTypes = getDemandTypes();
@@ -1583,27 +1582,32 @@ const renderDemandList = (
   if (!visibleTypes.length) {
     return null;
   }
+  const primaryType = visibleTypes[0];
+  const primaryCount = analysis.counts[primaryType] ?? 0;
   return (
-    <ul className="demand-summary-list">
-      {visibleTypes.map((type) => (
-        <li key={`${keyPrefix}-${type}`}>
-          <div className="demand-summary-row">
-            <span>{type}</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <strong>{analysis.counts[type]}</strong>
-              <button
-                type="button"
-                className="demand-summary-link"
-                onClick={() => onView(type)}
-              >
-                View
-              </button>
-            </div>
-          </div>
-          <small className="demand-summary-note">{DEMAND_EXPLANATIONS[type]}</small>
-        </li>
-      ))}
-    </ul>
+    <div className="demand-pattern-card">
+      <div className="demand-pattern-border">
+        <div className="demand-pattern-caption">Demand Pattern</div>
+        <div className="demand-pattern-content">
+          <p className="demand-pattern-title">{primaryType} Demand</p>
+          <p className="demand-pattern-description">
+            {DEMAND_EXPLANATIONS[primaryType]}
+          </p>
+        </div>
+        <div className="demand-pattern-footer">
+          <span className="demand-pattern-count">
+            Products: {primaryCount}
+          </span>
+          <button
+            type="button"
+            className="demand-pattern-view"
+            onClick={() => onView(primaryType)}
+          >
+            View
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -2232,6 +2236,7 @@ const togglePreview = () => {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleGenerateForecast = () => {
+    setHasSavedForecast(false);
     setForecastRequested(true);
     
     if (!lastConfirmedData) {
@@ -2280,6 +2285,7 @@ const togglePreview = () => {
     console.log(`Starting forecast generation for ${dates.length} points...`);
 
     setIsGenerating(true);
+    setHasSavedForecast(false);
     setOverallForecastSection(null);
     setStatusMessage("Running Facebook Prophet model on backend...");
 
@@ -3318,38 +3324,30 @@ const togglePreview = () => {
                       Automatically analyzes product demand patterns to reveal stability, risk, and data quality.
                     </p>
                   </div>
-                  <div className="dual-demand-grid">
-                    <div className="demand-box demand-box-product">
-                      {productDemandAnalysis.totalGroups ? (
-                        <>
-                          <p className="demand-summary-meta">
-                            Segmented {productDemandAnalysis.totalGroups} product groups.
-                          </p>
-                          {renderDemandList(
+                    <div className="demand-intelligence-body">
+                      <div className="demand-pattern-wrapper">
+                        {productDemandAnalysis.totalGroups ? (
+                          renderDemandList(
                             productDemandAnalysis,
-                            "product",
                             (type) => handleViewDemandType(type, "product")
-                          )}
-                        </>
-                      ) : (
-                        <p className="demand-summary-empty">
-                          Confirm the mapping and clean the data to run product demand classification.
-                        </p>
-                      )}
-                      <small className="demand-box-note">
-                      </small>
+                          )
+                        ) : (
+                          <p className="demand-summary-empty">
+                            Confirm the mapping and clean the data to run product demand classification.
+                          </p>
+                        )}
+                      </div>
+                      <div className="demand-intelligence-actions">
+                        <button
+                          type="button"
+                          className="demand-intelligence-cta"
+                          onClick={handleExportDemandIntelligence}
+                          disabled={!productDemandAnalysis.totalGroups}
+                        >
+                          Export Demand Insights
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="demand-intelligence-actions">
-                    <button
-                      type="button"
-                      className="demand-cta"
-                      onClick={handleExportDemandIntelligence}
-                      disabled={!productDemandAnalysis.totalGroups}
-                    >
-                      Export Demand Insights
-                    </button>
-                  </div>
                 </section>
                 {dataSummary && (
                   <section className="forecast-section config-section" data-step="config">
@@ -3489,6 +3487,23 @@ const togglePreview = () => {
                       </button>
                     </div>
                   </section>
+                )}
+
+                {overallForecastSection && (
+                  <ForecastOutput
+                    section={overallForecastSection}
+                    forecastLevel={forecastLevel}
+                    productCategoryOptions={productCategoryOptions}
+                    productOptions={productOptions}
+                    selectedCategory={selectedCategory}
+                    selectedProductKey={selectedProductKey}
+                    onCategoryChange={(v) => { setSelectedCategory(v); setSelectedProductKey(""); }}
+                    onProductChange={setSelectedProductKey}
+                    locationFieldConfig={locationFieldConfig}
+                    locationOptionsByField={locationOptionsByField}
+                    locationSelections={locationSelections}
+                    onLocationChange={updateLocationSelection}
+                  />
                 )}
 
               </>

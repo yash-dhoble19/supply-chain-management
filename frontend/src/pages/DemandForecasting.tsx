@@ -1,8 +1,11 @@
-import { useState } from "react";
+﻿import { useState, useEffect } from "react";
 import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
 import type { AppPage } from "../types/app.types";
 import type { CSSProperties, KeyboardEvent } from "react";
+import { getLatestForecastSnapshot, subscribeToForecastUpdates } from "../services/forecastStore";
+import ForecastOutput from "./ForecastOutput";
+import type { ForecastSnapshot } from "../types/forecast.types";
 
 const icons = {
   logo: (
@@ -164,6 +167,13 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
   const [intelModalOpen, setIntelModalOpen] = useState(false);
   const [multiDimModalOpen, setMultiDimModalOpen] = useState(false);
   const [scenarioModalOpen, setScenarioModalOpen] = useState(false);
+  const [latestForecast, setLatestForecast] = useState<ForecastSnapshot | null>(getLatestForecastSnapshot());
+
+  useEffect(() => {
+    return subscribeToForecastUpdates(() => {
+      setLatestForecast(getLatestForecastSnapshot());
+    });
+  }, []);
 
   const openFeatureModal = (label: string) => {
     if (label === "Intelligent Forecasting") {
@@ -216,39 +226,62 @@ export function DemandForecasting({ activePage, onNavigate }: DemandForecastingP
         />
 
         <div className="demand-content">
-          <div className="demand-hero">
-            <div className="demand-hero-icon">
-              <span className="demand-hero-icon-inner">{icons.barChart}</span>
-            </div>
-            <div>
-              <p className="demand-welcome">Welcome back, Marcus 👋</p>
-              <h2>Start your first forecast</h2>
-              <p>Turn data into demand insights with intelligent forecasting.</p>
-              <p className="demand-steps-title">Get started in 3 simple steps:</p>
-              <ol className="demand-steps">
-                <li>1. Upload historical data</li>
-                <li>2. Select products &amp; timeframe</li>
-                <li>3. Generate forecast</li>
-              </ol>
-            </div>
-          </div>
+          {latestForecast ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <h2>Forecast Analysis</h2>
+                <button
+                  className="demand-cta"
+                  style={{ width: "fit-content", padding: "8px 20px", fontSize: "0.9rem" }}
+                  onClick={() => onNavigate("createForecast")}
+                >
+                  Edit Configuration
+                </button>
+              </div>
+              <ForecastOutput
+                section={latestForecast.section}
+                forecastLevel={latestForecast.forecastLevel}
+                productCategoryOptions={latestForecast.productCategoryOptions}
+                productOptions={latestForecast.productOptions}
+                selectedCategory={latestForecast.selectedCategory}
+                selectedProductKey={latestForecast.selectedProductKey}
+                onCategoryChange={() => {}} 
+                onProductChange={() => {}}
+                locationFieldConfig={latestForecast.locationFieldConfig}
+                locationOptionsByField={latestForecast.locationOptionsByField}
+                locationSelections={latestForecast.locationSelections}
+                onLocationChange={() => {}}
+                insightHighlights={latestForecast.insightHighlights}
+              />
+            </>
+          ) : (
+            <>
+              <div className="demand-hero">
+                <div className="demand-hero-icon">
+                  <span className="demand-hero-icon-inner">{icons.barChart}</span>
+                </div>
+                <div>
+                  <p className="demand-welcome">Welcome back, Marcus 👋</p>
+                  <h2>Start your first forecast</h2>
+                  <p>Turn data into demand insights with intelligent forecasting.</p>
+                  <p className="demand-steps-title">Get started in 3 simple steps:</p>
+                  <ol className="demand-steps">
+                    <li>1. Upload historical data</li>
+                    <li>2. Select products &amp; timeframe</li>
+                    <li>3. Generate forecast</li>
+                  </ol>
+                </div>
+              </div>
 
-          <button
-            className="demand-cta"
-            type="button"
-            onClick={() => onNavigate("createForecast")}
-          >
-            🚀 Create Demand Forecast
-          </button>
-          <div style={sampleButtonWrapperStyles}>
-            <button
-              style={sampleButtonStyles}
-              type="button"
-              onClick={() => onNavigate("createForecast")}
-            >
-              Try Sample Forecast
-            </button>
-          </div>
+              <button
+                className="demand-cta"
+                type="button"
+                onClick={() => onNavigate("createForecast")}
+              >
+                🚀 Create Demand Forecast
+              </button>
+            </>
+          )}
 
           <div className="demand-feature-grid">
             {features.map((f) => {

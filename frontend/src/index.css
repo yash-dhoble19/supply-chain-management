@@ -629,10 +629,51 @@ body {
   font-family: inherit;
 }
 
-.demand-intelligence-actions {
+.demand-intelligence-body {
   margin-top: 18px;
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.demand-pattern-wrapper {
+  flex: 1;
+  min-width: 260px;
+}
+
+.demand-intelligence-actions {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  min-width: 200px;
+}
+
+.demand-intelligence-cta {
+  border: none;
+  background: #3b82f6;
+  color: #fff;
+  border-radius: 12px;
+  padding: 16px 36px;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.35);
+  transition: background 0.2s, transform 0.2s;
+  font-family: inherit;
+  letter-spacing: 0.01em;
+}
+
+.demand-intelligence-cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.demand-intelligence-cta:not(:disabled):hover {
+  background: #2563eb;
+  transform: translateY(-1px);
 }
 
 .demand-cta:hover {
@@ -1691,14 +1732,84 @@ body {
   background: #eefdf7;
 }
 
-.demand-box-store {
-  background: #eef2ff;
+.demand-pattern-card {
+  border-radius: 16px;
+  background: #f8fafc;
+  padding: 12px;
 }
 
-.demand-intelligence-actions {
-  margin-top: 18px;
+.demand-pattern-border {
+  border: 1px solid #cbd5f5;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 18px;
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 220px;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.1);
+}
+
+.demand-pattern-caption {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #475569;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.demand-pattern-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.demand-pattern-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 0;
+  color: #0f172a;
+}
+
+.demand-pattern-description {
+  margin: 0;
+  color: #475569;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.demand-pattern-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.demand-pattern-count {
+  font-size: 0.95rem;
+}
+
+.demand-pattern-view {
+  border: none;
+  background: transparent;
+  color: #3b82f6;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 8px;
+}
+
+.demand-pattern-view:hover,
+.demand-pattern-view:focus-visible {
+  text-decoration: underline;
+}
+
+.demand-box-store {
+  background: #eef2ff;
 }
 
 .demand-box h4 {
