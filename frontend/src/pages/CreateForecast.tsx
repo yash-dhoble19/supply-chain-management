@@ -4,6 +4,11 @@ import { Header } from "../components/layout/Header";
 import { Sidebar } from "../components/layout/Sidebar";
 import type { AppPage } from "../types/app.types";
 import * as XLSX from "xlsx-js-style";
+import {
+  generateSmartForecast,
+  type ForecastSection,
+  type SmartForecastOutput,
+} from "./forecastEngine";
 
 type CsvRow = Record<string, string>;
 
@@ -163,176 +168,6 @@ interface AnalysisResults {
   productDemandAnalysis: DemandAnalysisResult;
   locationDemandAnalysis: DemandAnalysisResult;
   productMetadata: Record<string, ProductMetadata>;
-}
-
-type ForecastSection = {
-  sectionName: string;
-  chart: {
-    history: { date: string; value: number }[];
-    forecast: { date: string; p10: number; p50: number; p90: number }[];
-  };
-  metrics: {
-    totalForecast: number;
-    avgDailyForecast: number;
-    minForecast: number;
-    maxForecast: number;
-  };
-  table: {
-    date: string;
-    forecast: number;
-    lowerBound: number;
-    upperBound: number;
-  }[];
-};
-
-type ForecastConfig = {
-  windowSize: number;
-  forecastDurationDays: number;
-};
-
-const roundTwo = (value: number) => Math.round(value * 100) / 100;
-
-const parseSalesValue = (value: string | undefined): number | null => {
-  if (!value) {
-    return null;
-  }
-  const cleaned = value.replace(/[^0-9.\-]/g, "");
-  if (!cleaned) {
-    return null;
-  }
-  const parsed = Number(cleaned);
-  return Number.isNaN(parsed) ? null : parsed;
-};
-
-export function generateOverallMovingAverageForecast(
-  cleanedRows: Array<Record<string, string>>,
-  mapping: { dateColumn: string; salesColumn: string },
-  config: ForecastConfig,
-): ForecastSection {
-  const salesByDate: Record<string, number> = {};
-
-  cleanedRows.forEach((row) => {
-    const dateValue = row[mapping.dateColumn];
-    const salesValue = parseSalesValue(row[mapping.salesColumn]);
-    if (!dateValue || salesValue === null) {
-      return;
-    }
-    const normalizedDate = dateValue.slice(0, 10);
-    salesByDate[normalizedDate] =
-      (salesByDate[normalizedDate] ?? 0) + salesValue;
-  });
-
-  const sortedDates = Object.keys(salesByDate).sort(
-    (a, b) => new Date(a).getTime() - new Date(b).getTime(),
-  );
-
-  if (!sortedDates.length) {
-    const emptyForecast = Array.from(
-      { length: config.forecastDurationDays },
-      () => ({
-        date: "",
-        p10: 0,
-        p50: 0,
-        p90: 0,
-      }),
-    );
-    return {
-      sectionName: "Overall Demand Forecast",
-      chart: { history: [], forecast: emptyForecast },
-      metrics: {
-        totalForecast: 0,
-        avgDailyForecast: 0,
-        minForecast: 0,
-        maxForecast: 0,
-      },
-      table: emptyForecast.map((entry) => ({
-        date: entry.date,
-        forecast: entry.p50,
-        lowerBound: entry.p10,
-        upperBound: entry.p90,
-      })),
-    };
-  }
-
-  const parseDate = (value: string) => new Date(value);
-  const formatDate = (date: Date) => date.toISOString().split("T")[0];
-  const firstDate = parseDate(sortedDates[0]);
-  const lastDate = parseDate(sortedDates[sortedDates.length - 1]);
-  const allDates: string[] = [];
-
-  for (
-    let cursor = new Date(firstDate);
-    cursor <= lastDate;
-    cursor.setDate(cursor.getDate() + 1)
-  ) {
-    allDates.push(formatDate(new Date(cursor)));
-  }
-
-  const history = allDates.map((date) => ({
-    date,
-    value: roundTwo(salesByDate[date] ?? 0),
-  }));
-
-  const windowSize = Math.max(
-    1,
-    Math.min(config.windowSize, history.length),
-  );
-  const values = history.map((item) => item.value);
-  const forecast: ForecastSection["chart"]["forecast"] = [];
-  const rolling: number[] = [...values.slice(-windowSize)];
-  const lastHistoryDate = new Date(allDates[allDates.length - 1]);
-
-  for (let i = 1; i <= config.forecastDurationDays; i += 1) {
-    const sum = rolling.reduce((total, value) => total + value, 0);
-    const avg = roundTwo(sum / rolling.length);
-    const forecastDate = new Date(lastHistoryDate);
-    forecastDate.setDate(forecastDate.getDate() + i);
-    const p50 = avg;
-    const p10 = roundTwo(p50 * 0.9);
-    const p90 = roundTwo(p50 * 1.1);
-
-    forecast.push({
-      date: formatDate(forecastDate),
-      p10,
-      p50,
-      p90,
-    });
-
-    rolling.push(avg);
-    if (rolling.length > windowSize) {
-      rolling.shift();
-    }
-  }
-
-  const p50Values = forecast.map((entry) => entry.p50);
-  const totalForecast = roundTwo(
-    p50Values.reduce((sum, value) => sum + value, 0),
-  );
-  const avgDailyForecast = roundTwo(
-    totalForecast / Math.max(1, config.forecastDurationDays)
-  );
-  const minForecast = roundTwo(Math.min(...p50Values));
-  const maxForecast = roundTwo(Math.max(...p50Values));
-
-  return {
-    sectionName: "Overall Demand Forecast",
-    chart: {
-      history,
-      forecast,
-    },
-    metrics: {
-      totalForecast,
-      avgDailyForecast,
-      minForecast,
-      maxForecast,
-    },
-    table: forecast.map((entry) => ({
-      date: entry.date,
-      forecast: entry.p50,
-      lowerBound: entry.p10,
-      upperBound: entry.p90,
-    })),
-  };
 }
 
 const getDemandTypes = (): DemandType[] => [
@@ -2160,13 +1995,14 @@ const togglePreview = () => {
       setOverallForecastSection(null);
       return;
     }
-    const section = generateOverallMovingAverageForecast(
+    const section = generateSmartForecast(
       lastConfirmedData.cleaned,
       {
         dateColumn: lastConfirmedData.mapping.dateColumn,
         salesColumn: lastConfirmedData.mapping.salesColumn,
       },
       { windowSize: 7, forecastDurationDays },
+      lastConfirmedData.mapping,
     );
     setOverallForecastSection(section);
   }, [forecastDurationDays, lastConfirmedData]);
@@ -2179,6 +2015,9 @@ const togglePreview = () => {
     0,
     (overallForecastSection?.table.length ?? 0) - forecastTablePreview.length
   );
+  const smartForecastSummary: SmartForecastOutput["summary"] | undefined =
+    overallForecastSection?.smart?.summary;
+  const smartForecastModel = overallForecastSection?.smart?.model;
   const formatForecastValue = (value: number) =>
     value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -3241,28 +3080,28 @@ const togglePreview = () => {
                 </section>
                 {dataSummary && (
                   <section className="forecast-section config-section">
-                  <div className="forecast-section-header">
-                    <div>
-                      <h3>Forecast Configuration</h3>
-                      <p className="forecast-section-subtitle">
-                        Adjust forecast duration, level, and time grouping.
-                      </p>
+                    <div className="forecast-section-header">
+                      <div>
+                        <h3>Forecast Configuration</h3>
+                        <p className="forecast-section-subtitle">
+                          Adjust forecast duration, level, and time grouping.
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="forecast-config-note" style={{ marginBottom: 16 }}>
-                    <p className="mapping-helper" style={{ marginTop: 0 }}>
-                      {maxForecastDays
-                        ? `Based on available data, you can forecast up to ${maxForecastDays} days (${availableDataDays} days of history).`
-                        : "Clean the uploaded data to reveal how much horizon you can forecast."}
-                    </p>
-                    <small className="mapping-helper" style={{ marginTop: 4 }}>
-                      {TIME_GROUPING_REQUIREMENTS}
-                    </small>
-                  </div>
-                  <div className="config-grid">
-                    <label className="config-field">
-                      <span>Forecast Level</span>
-                      <select
+                    <div className="forecast-config-note" style={{ marginBottom: 16 }}>
+                      <p className="mapping-helper" style={{ marginTop: 0 }}>
+                        {maxForecastDays
+                          ? `Based on available data, you can forecast up to ${maxForecastDays} days (${availableDataDays} days of history).`
+                          : "Clean the uploaded data to reveal how much horizon you can forecast."}
+                      </p>
+                      <small className="mapping-helper" style={{ marginTop: 4 }}>
+                        {TIME_GROUPING_REQUIREMENTS}
+                      </small>
+                    </div>
+                    <div className="config-grid">
+                      <label className="config-field">
+                        <span>Forecast Level</span>
+                        <select
                           value={forecastLevel}
                           onChange={(event) => setForecastLevel(event.target.value as ForecastLevel)}
                         >
@@ -3273,22 +3112,17 @@ const togglePreview = () => {
                           ))}
                         </select>
                         <small className="mapping-helper">
-                          {FORECAST_LEVEL_OPTIONS.find(
-                            (option) => option.value === forecastLevel
-                          )?.description}
+                          {FORECAST_LEVEL_OPTIONS.find((option) => option.value === forecastLevel)
+                            ?.description}
                         </small>
                       </label>
                       <label className="config-field">
                         <span>Forecast Duration</span>
                         <select
                           value={
-                            visibleForecastDurations.length
-                              ? forecastDurationDays.toString()
-                              : ""
+                            visibleForecastDurations.length ? forecastDurationDays.toString() : ""
                           }
-                          onChange={(event) =>
-                            setForecastDurationDays(Number(event.target.value))
-                          }
+                          onChange={(event) => setForecastDurationDays(Number(event.target.value))}
                           disabled={!visibleForecastDurations.length}
                         >
                           {visibleForecastDurations.length ? (
@@ -3301,9 +3135,7 @@ const togglePreview = () => {
                             <option value="">Clean the data to unlock durations</option>
                           )}
                         </select>
-                        <small className="mapping-helper">
-                          {forecastDurationHelperText}
-                        </small>
+                        <small className="mapping-helper">{forecastDurationHelperText}</small>
                       </label>
                       <label className="config-field">
                         <span>Time Grouping</span>
@@ -3337,12 +3169,16 @@ const togglePreview = () => {
                         <small className="mapping-helper" style={{ marginTop: 4 }}>
                         </small>
                       </div>
-                  </div>
-                  {forecastRequested && (
+                    </div>
+                  </section>
+                )}
+
+                {forecastRequested && (
+                  <>
                     <section className="forecast-section overall-forecast-output" style={{ marginTop: 20 }}>
                       <div className="forecast-section-header">
                         <div>
-                          <h4>Overall Demand Forecast</h4>
+                          <h3>Demand Forecast</h3>
                           <p className="forecast-section-subtitle">
                             Simple moving average of the cleaned data.
                           </p>
@@ -3350,24 +3186,44 @@ const togglePreview = () => {
                       </div>
                       {overallForecastSection ? (
                         <>
-                          <div className="forecast-metrics-grid">
-                            <div className="forecast-metric">
-                              <span>Total forecast</span>
-                              <strong>{formatForecastValue(overallForecastSection.metrics.totalForecast)}</strong>
-                            </div>
-                            <div className="forecast-metric">
-                              <span>Average daily</span>
-                              <strong>{formatForecastValue(overallForecastSection.metrics.avgDailyForecast)}</strong>
-                            </div>
-                            <div className="forecast-metric">
-                              <span>Lowest p50</span>
-                              <strong>{formatForecastValue(overallForecastSection.metrics.minForecast)}</strong>
-                            </div>
-                            <div className="forecast-metric">
-                              <span>Highest p50</span>
-                              <strong>{formatForecastValue(overallForecastSection.metrics.maxForecast)}</strong>
-                            </div>
+                          <div className="forecast-kpi-card-grid">
+                            <article className="forecast-kpi-card">
+                              <span className="forecast-kpi-label">Total forecast</span>
+                              <strong className="forecast-kpi-value">
+                                {formatForecastValue(overallForecastSection.metrics.totalForecast)}
+                              </strong>
+                            </article>
+                            <article className="forecast-kpi-card">
+                              <span className="forecast-kpi-label">Average daily</span>
+                              <strong className="forecast-kpi-value">
+                                {formatForecastValue(overallForecastSection.metrics.avgDailyForecast)}
+                              </strong>
+                            </article>
+                            <article className="forecast-kpi-card">
+                              <span className="forecast-kpi-label">Lowest p50</span>
+                              <strong className="forecast-kpi-value">
+                                {formatForecastValue(overallForecastSection.metrics.minForecast)}
+                              </strong>
+                            </article>
+                            <article className="forecast-kpi-card">
+                              <span className="forecast-kpi-label">Highest p50</span>
+                              <strong className="forecast-kpi-value">
+                                {formatForecastValue(overallForecastSection.metrics.maxForecast)}
+                              </strong>
+                            </article>
                           </div>
+                          {smartForecastSummary ? (
+                            <div className="forecast-smart-summary" style={{ marginTop: 12, display: "flex", gap: 16 }}>
+                              <span>Demand: {smartForecastSummary.demandType}</span>
+                              <span>Trend: {smartForecastSummary.trend}</span>
+                              <span>Confidence: {smartForecastSummary.confidence}</span>
+                            </div>
+                          ) : null}
+                          {smartForecastModel ? (
+                            <p className="mapping-helper" style={{ marginTop: 8 }}>
+                              Model: {smartForecastModel.name} — {smartForecastModel.reason}
+                            </p>
+                          ) : null}
                           <div className="forecast-output-table" style={{ marginTop: 12 }}>
                             <div className="forecast-table-row forecast-table-header">
                               <span>Date</span>
@@ -3402,7 +3258,6 @@ const togglePreview = () => {
                         </p>
                       )}
                     </section>
-                  )}
                     {(forecastLevel === "product" || forecastLevel === "combined") && (
                       <div className="forecast-flow-panel" style={{ marginTop: 18 }}>
                         <p className="mapping-helper" style={{ marginBottom: 8 }}>
@@ -3488,7 +3343,7 @@ const togglePreview = () => {
                         )}
                       </div>
                     )}
-                  </section>
+                  </>
                 )}
               </>
             )}
