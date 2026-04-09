@@ -85,6 +85,7 @@ function useLocationDisplay(lat?: number | null, lon?: number | null) {
 // Job item component with location display
 function JobItem({ job, isGpsEnabled }: { job: any; isGpsEnabled: boolean }) {
   const { locationLabel, isLoading } = useLocationDisplay(job.current_location_lat, job.current_location_lon);
+  const [isTracking, setIsTracking] = useState(false);
 
   return (
     <div className="bg-white rounded-xl p-6 shadow flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -96,7 +97,18 @@ function JobItem({ job, isGpsEnabled }: { job: any; isGpsEnabled: boolean }) {
           GPS: {isLoading ? "Loading location..." : locationLabel || (isGpsEnabled ? "Waiting for permission" : "Not shared")}
         </div>
       </div>
-      <span className="inline-block px-4 py-2 bg-green-100 text-green-700 rounded-lg">In Progress</span>
+      {!isTracking ? (
+          <button
+            onClick={() => setIsTracking(true)}
+            className="md:mt-0 inline-flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-semibold shadow-sm transition"
+          >
+             <span className="material-symbols-outlined text-sm">play_arrow</span> Start Tracking
+          </button>
+      ) : (
+          <span className="inline-block px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg font-semibold animate-pulse">
+             Live Tracking Active
+          </span>
+      )}
     </div>
   );
 }
@@ -106,6 +118,7 @@ export function DriverDashboard({ user, onLogout }: DriverDashboardProps) {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [availableJobs, setAvailableJobs] = useState<any[]>([]);
   const [myJobs, setMyJobs] = useState<any[]>([]);
+  const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isGpsEnabled, setIsGpsEnabled] = useState(false);
@@ -121,13 +134,15 @@ export function DriverDashboard({ user, onLogout }: DriverDashboardProps) {
     setError(null);
 
     try {
-      const [available, mine] = await Promise.all([
+      const [available, mine, directSchedules] = await Promise.all([
         logisticsService.listLogisticsOrders({ status: "Sourced", unassigned: true }, signal),
         logisticsService.listLogisticsOrders({ driver_id: DRIVER_ID }, signal),
+        logisticsService.listSchedules(DRIVER_ID, signal),
       ]);
 
       setAvailableJobs(available);
       setMyJobs(mine);
+      setSchedules(directSchedules);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load jobs");
     } finally {
@@ -179,7 +194,6 @@ export function DriverDashboard({ user, onLogout }: DriverDashboardProps) {
     };
   }, [isGpsEnabled, myJobs, fetchJobs]);
 
-  // Accept job handler
   const acceptJob = async (jobId: number) => {
     // Optimistically move job to myJobs
     setAvailableJobs((prev) => prev.filter((j) => j.id !== jobId));
@@ -195,6 +209,30 @@ export function DriverDashboard({ user, onLogout }: DriverDashboardProps) {
       setError("Failed to accept job");
       setLoading(false);
     }
+  };
+
+  const handleScheduleResponse = async (scheduleId: number, status: "ACCEPTED" | "REJECTED" | "IN_PROGRESS") => {
+      setLoading(true);
+      try {
+          await logisticsService.respondToSchedule(scheduleId, status);
+          fetchJobs();
+      } catch (e) {
+          setError("Failed to respond to schedule");
+          setLoading(false);
+      }
+  };
+
+  const handleStartTracking = async (scheduleId: number, shipmentId?: number) => {
+      try {
+          if (shipmentId) {
+              // Trigger the logistics simulator for the Manufacturer display
+              await logisticsService.startShipment(shipmentId);
+          }
+          // Update local status regardless of whether shipment simulator launched
+          await handleScheduleResponse(scheduleId, "IN_PROGRESS");
+      } catch(e) {
+          setError("Failed to start tracking");
+      }
   };
 
   const handleToggleGps = () => {
@@ -303,13 +341,51 @@ export function DriverDashboard({ user, onLogout }: DriverDashboardProps) {
 
         {tab === "available" && (
           <div>
-            <h2 className="text-xl font-bold mb-4">Available Jobs</h2>
+            {schedules.filter(s => s.status === "PENDING").length > 0 && (
+                <div className="mb-8">
+                  <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-indigo-700">
+                    <span className="material-symbols-outlined">mark_email_unread</span>
+                    Direct Assignment Requests
+                  </h2>
+                  <div className="grid gap-4">
+                    {schedules.filter(s => s.status === "PENDING").map((schedule) => (
+                      <div key={`sched-${schedule.id}`} className="bg-indigo-50 border border-indigo-200 rounded-xl p-6 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <div className="text-xs font-bold text-indigo-600 uppercase tracking-widest mb-1">From: {schedule.manufacturer_name}</div>
+                          <div className="font-semibold text-lg text-slate-800">{schedule.product_name}</div>
+                          <div className="text-slate-600 text-sm">Qty: {schedule.quantity} | Type: {schedule.carrier_type}</div>
+                          <div className="text-slate-600 text-sm mt-2 flex items-center gap-1">
+                              <span className="material-symbols-outlined text-sm">route</span>
+                              {schedule.origin} <span className="font-bold text-indigo-400">→</span> {schedule.destination}
+                          </div>
+                        </div>
+                        <div className="flex gap-2 mt-4 md:mt-0">
+                          <button
+                            className="px-4 py-2 bg-white text-red-600 rounded-lg border border-red-200 hover:bg-red-50 font-semibold shadow-sm"
+                            onClick={() => handleScheduleResponse(schedule.id, "REJECTED")}
+                          >
+                            Reject
+                          </button>
+                          <button
+                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm font-semibold"
+                            onClick={() => handleScheduleResponse(schedule.id, "ACCEPTED")}
+                          >
+                            Accept Schedule
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+            )}
+
+            <h2 className="text-xl font-bold mb-4">Open Job Market</h2>
             {loading ? (
               <div>Loading...</div>
             ) : error ? (
               <div className="text-red-500">{error}</div>
             ) : availableJobs.length === 0 ? (
-              <div>No available jobs at the moment.</div>
+              <div>No open jobs at the moment.</div>
             ) : (
               <div className="grid gap-4">
                 {availableJobs.map((job) => (
@@ -383,7 +459,37 @@ export function DriverDashboard({ user, onLogout }: DriverDashboardProps) {
 
         {tab === "myjobs" && (
           <div>
-            <h2 className="text-xl font-bold mb-4">My Jobs</h2>
+            <h2 className="text-xl font-bold mb-4">My Accepted Schedules</h2>
+            <div className="grid gap-4 mb-8">
+              {schedules.filter(s => s.status === "ACCEPTED" || s.status === "IN_PROGRESS").map((schedule) => (
+                <div key={`msched-${schedule.id}`} className="bg-white rounded-xl p-6 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between border border-emerald-100">
+                  <div>
+                    <div className="font-semibold text-lg text-slate-800">{schedule.product_name}</div>
+                    <div className="text-slate-600 text-sm">Qty: {schedule.quantity} | {schedule.origin} → {schedule.destination}</div>
+                    <div className="text-slate-500 text-sm mt-2">
+                        {schedule.status === "IN_PROGRESS" ? "Tracking Live Location..." : "Waiting to start"}
+                    </div>
+                  </div>
+                  {schedule.status === "ACCEPTED" ? (
+                      <button
+                        onClick={() => handleStartTracking(schedule.id, schedule.shipment_id)}
+                        className="mt-4 md:mt-0 inline-flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 font-semibold shadow-sm transition"
+                      >
+                         <span className="material-symbols-outlined text-sm">play_arrow</span> Start Tracking
+                      </button>
+                  ) : (
+                      <span className="inline-block px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg font-semibold animate-pulse">
+                         Live Tracking Active
+                      </span>
+                  )}
+                </div>
+              ))}
+              {schedules.filter(s => s.status === "ACCEPTED" || s.status === "IN_PROGRESS").length === 0 && (
+                <div className="text-slate-500">No active direct schedules.</div>
+              )}
+            </div>
+
+            <h2 className="text-xl font-bold mb-4">Other Jobs</h2>
             {loading ? (
               <div>Loading...</div>
             ) : error ? (
