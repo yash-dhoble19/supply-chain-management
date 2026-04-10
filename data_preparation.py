@@ -15,10 +15,11 @@ def prepare_category_data(
     category: str,
     date_col: str = "Date",
     category_col: str = "Category",
-    units_col: str = "Units_Sold"
+    units_col: str = "Units_Sold",
+    time_grouping: str = "Monthly"
 ) -> pd.DataFrame:
     """
-    Standardizes and aggregates raw data into monthly 'ds' and 'y' columns 
+    Standardizes and aggregates raw data into required frequency ('ds' and 'y') 
     for the Prophet model.
     
     Args:
@@ -63,11 +64,14 @@ def prepare_category_data(
         units_col: "y"    # Prophet value column
     })
 
-    # 3. Monthly Aggregation and Sorting
+    # 3. Aggregation and Sorting based on time_grouping
+    freq_map = {"Daily": "D", "Weekly": "W", "Monthly": "MS"}
+    freq = freq_map.get(time_grouping, "MS")
+
     monthly_df = (
         clean_df
         .set_index("ds")["y"]
-        .resample("MS")  # Month Start frequency
+        .resample(freq)
         .sum()
         .reset_index()
     )
@@ -75,13 +79,24 @@ def prepare_category_data(
     # Sort by date
     monthly_df = monthly_df.sort_values("ds").reset_index(drop=True)
     
-    # 4. Data sufficiency check
-    num_months = len(monthly_df)
-    if num_months < settings.min_months_for_analysis:
-        raise ValueError(
-            f"Only {num_months} month(s) of data found for '{category}'. "
-            f"Minimum {settings.min_months_for_analysis} months required for any analysis."
-        )
+    if monthly_df.empty:
+        raise ValueError("Data became empty after resampling.")
+
+    # 4. Data sufficiency check based on exact business rules
+    data_span_days = (monthly_df["ds"].max() - monthly_df["ds"].min()).days
+
+    if time_grouping == "Daily":
+        # Rule: Daily needs 3-6 months (approx 90 days minimum)
+        if data_span_days < 90:
+            raise ValueError(f"Daily forecast requires 3-6 months of data for weekly patterns. Only {data_span_days} days found.")
+    elif time_grouping == "Weekly":
+        # Rule: Weekly needs 1 year (365 days minimum)
+        if data_span_days < 365:
+            raise ValueError(f"Weekly forecast requires 1 year of data for yearly seasonality. Only ~{int(data_span_days/7)} weeks found.")
+    elif time_grouping == "Monthly":
+        # Rule: Monthly needs 2-3 years (approx 730 days minimum)
+        if data_span_days < 730:
+            raise ValueError(f"Monthly forecast requires 2-3 years of data for long trends. Only ~{int(data_span_days/30)} months found.")
 
     # 5. Calculate additional statistics for context
     monthly_df.attrs["category"] = category

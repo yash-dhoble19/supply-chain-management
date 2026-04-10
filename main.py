@@ -13,6 +13,8 @@ from api.routes import (
     auth,
     dashboard,
     drivers,
+    forecast,
+    forecast_ai,
     inventory,
     logistics,
     logistics_orders,
@@ -55,6 +57,8 @@ app.include_router(logistics.router)
 app.include_router(ai.router)
 app.include_router(ai_tools.router)
 app.include_router(inventory.router)
+app.include_router(forecast_ai.router)
+app.include_router(forecast.router)
 
 # --- New routers from CodeByAmruta ---
 app.include_router(manufacturing.router)
