@@ -2,9 +2,9 @@ from pydantic import BaseModel, EmailStr
 from pydantic import ConfigDict
 
 class LoginRequest(BaseModel):
-    name: str
+    name: str = None
     email: EmailStr
-    role: str
+    role: str = None
 
 class UserResponse(BaseModel):
     id: int

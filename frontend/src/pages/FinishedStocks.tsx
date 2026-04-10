@@ -873,6 +873,7 @@ export function FinishedStocks({ activePage, onNavigate }: FinishedStocksProps) 
                     <th className="px-4 py-3 text-left font-semibold text-secondary">Retailer</th>
                     <th className="px-4 py-3 text-left font-semibold text-secondary">Product</th>
                     <th className="px-4 py-3 text-left font-semibold text-secondary">Quantity</th>
+                    <th className="px-4 py-3 text-left font-semibold text-secondary">Payment Status</th>
                     <th className="px-4 py-3 text-left font-semibold text-secondary">Status</th>
                     <th className="px-4 py-3 text-left font-semibold text-secondary">Driver</th>
                     <th className="px-4 py-3 text-right font-semibold text-secondary">Action</th>
@@ -884,6 +885,31 @@ export function FinishedStocks({ activePage, onNavigate }: FinishedStocksProps) 
                       <td className="px-4 py-3 text-on-surface font-semibold">{order.retailer_name || "Unknown Retailer"}</td>
                       <td className="px-4 py-3 text-secondary">{order.product_name}</td>
                       <td className="px-4 py-3 text-on-surface font-bold">{order.quantity} units</td>
+                      <td className="px-4 py-3">
+                        {order.payment_status === "paid" ? (
+                          <div>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-green-100 text-green-700">
+                              <span className="material-symbols-outlined text-xs">check_circle</span>
+                              UPI Paid
+                            </span>
+                            {order.upi_transaction_id && (
+                              <p className="mt-1 text-[10px] text-slate-500 font-mono">
+                                UTR: {order.upi_transaction_id}
+                              </p>
+                            )}
+                          </div>
+                        ) : order.payment_status === "pending_cash" ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-700">
+                            <span className="material-symbols-outlined text-xs">payments</span>
+                            Cash on Delivery
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-500">
+                            <span className="material-symbols-outlined text-xs">pending</span>
+                            Pending
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
                           order.status === "Pending" ? "bg-amber-100 text-amber-700" :

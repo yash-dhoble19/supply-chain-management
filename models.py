@@ -27,6 +27,19 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     role = Column(String, nullable=False)  # ADMIN, MANAGER, LOGISTICS
 
+class DriverProfile(Base):
+    __tablename__ = "driver_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    driving_license = Column(String, nullable=True)
+    vehicle_make = Column(String, nullable=True)
+    vehicle_model = Column(String, nullable=True)
+    license_plate = Column(String, nullable=True)
+    cost_per_km = Column(Float, nullable=True)
+
+    user = relationship("User", backref="driver_profile")
+
 
 # =====================================================
 # 2. PRODUCTS (Core Inventory Entity)
@@ -584,6 +597,9 @@ class LogisticsOrder(Base):
     imageUrl = Column(Text, nullable=True)
     supplierName = Column(String, nullable=True)
     publishedAt = Column(String, nullable=True)
+    # Payment tracking
+    payment_status = Column(String, nullable=True, default="pending")  # "paid", "pending_cash", "pending"
+    upi_transaction_id = Column(String, nullable=True)
 
 
 # =====================================================

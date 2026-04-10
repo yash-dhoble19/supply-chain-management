@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { loginUser } from "../services/authService";
+import { loginUser, registerUser } from "../services/authService";
 import type { AuthRole, AuthUser, LoginPayload } from "../services/authService";
 
 interface LoginProps {
@@ -20,6 +20,7 @@ const roleOptions: Array<{ value: AuthRole; label: string }> = [
 ];
 
 export function Login({ onLogin }: LoginProps) {
+  const [isLogin, setIsLogin] = useState<boolean>(true);
   const [form, setForm] = useState<LoginFormState>({
     name: "",
     email: "",
@@ -40,17 +41,21 @@ export function Login({ onLogin }: LoginProps) {
 
     try {
       const payload: LoginPayload = {
-        name: form.name,
+        name: isLogin ? "" : form.name,
         email: form.email,
         role: form.role,
       };
-      const response = await loginUser(payload);
+      
+      const response = isLogin 
+        ? await loginUser(payload)
+        : await registerUser(payload);
+        
       onLogin(response.user, response.access_token);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Login failed. Please double-check your details and try again.",
+          : `${isLogin ? "Login" : "Sign up"} failed. Please double-check your details and try again.`
       );
     } finally {
       setLoading(false);
@@ -62,25 +67,31 @@ export function Login({ onLogin }: LoginProps) {
       <div className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-12 lg:px-8">
         <div className="rounded-3xl border border-outline-variant/10 bg-surface-container-low p-8 shadow-sm">
           <div className="mb-8 space-y-3">
-            <p className="text-sm font-semibold uppercase tracking-[0.32em] text-secondary">Sign in</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.32em] text-secondary">
+              {isLogin ? "Sign in" : "Sign up"}
+            </p>
             <h1 className="text-4xl font-bold text-on-surface">Supply Chain Management</h1>
             <p className="max-w-2xl text-sm leading-6 text-secondary">
-              Select your role to open the matching dashboard for manufacturers, drivers, or retailers.
+              {isLogin
+                ? "Sign in to access your dashboard."
+                : "Select your role to open the matching dashboard for manufacturers, drivers, or retailers."}
             </p>
           </div>
 
           <form className="space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label className="block text-sm font-medium text-on-surface">Name</label>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(event) => handleChange("name", event.target.value)}
-                className="mt-2 w-full rounded-2xl border border-outline px-4 py-3 bg-background text-on-surface shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                placeholder="Your name"
-                required
-              />
-            </div>
+            {!isLogin && (
+              <div>
+                <label className="block text-sm font-medium text-on-surface">Name</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(event) => handleChange("name", event.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-outline px-4 py-3 bg-background text-on-surface shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  placeholder="Your name"
+                  required={!isLogin}
+                />
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-on-surface">Email</label>
@@ -106,37 +117,55 @@ export function Login({ onLogin }: LoginProps) {
               />
             </div>
 
-            <div className="grid gap-6 md:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-on-surface">Role</label>
-                <select
-                  value={form.role}
-                  onChange={(event) => handleChange("role", event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-outline px-4 py-3 bg-background text-on-surface shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                >
-                  {roleOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+            {!isLogin && (
+              <div className="grid gap-6 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-on-surface">Role</label>
+                  <select
+                    value={form.role}
+                    onChange={(event) => handleChange("role", event.target.value)}
+                    className="mt-2 w-full rounded-2xl border border-outline px-4 py-3 bg-background text-on-surface shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  >
+                    {roleOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            </div>
+            )}
 
-            {error ? (
+            {error && (
               <div className="rounded-3xl border border-danger/20 bg-danger-container p-4 text-sm text-danger">
                 {error}
               </div>
-            ) : null}
+            )}
 
             <button
               type="submit"
               disabled={loading}
               className="inline-flex w-full items-center justify-center rounded-2xl bg-primary px-6 py-4 text-base font-semibold text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
             >
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? (isLogin ? "Signing in..." : "Signing up...") : (isLogin ? "Sign in" : "Sign up")}
             </button>
           </form>
+
+          <div className="mt-6 text-center">
+            <span className="text-sm text-secondary">
+              {isLogin ? "Don't have an account? " : "Already have an account? "}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError("");
+              }}
+              className="text-sm font-semibold text-primary hover:text-primary/80 transition"
+            >
+              {isLogin ? "Sign up" : "Sign in"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

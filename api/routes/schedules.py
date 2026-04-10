@@ -33,8 +33,8 @@ class ScheduleRequestResponse(ScheduleRequestCreate):
 
 @router.post("/", response_model=ScheduleRequestResponse)
 def create_schedule(req: ScheduleRequestCreate, db: Session = Depends(database.get_db)):
-    # Look up the driver name
-    driver = db.query(models.Driver).filter(models.Driver.id == req.driver_id).first()
+    # Look up the driver name using the User table (since drivers are now authenticating users)
+    driver = db.query(models.User).filter(models.User.id == req.driver_id).first()
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
         

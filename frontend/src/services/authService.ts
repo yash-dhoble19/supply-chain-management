@@ -25,4 +25,8 @@ export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
   return apiPost<AuthResponse, LoginPayload>("/api/auth/login", payload);
 }
 
+export async function registerUser(payload: LoginPayload): Promise<AuthResponse> {
+  return apiPost<AuthResponse, LoginPayload>("/api/auth/register", payload);
+}
+
 // anything

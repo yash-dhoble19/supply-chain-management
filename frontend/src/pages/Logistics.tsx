@@ -13,6 +13,7 @@ import type {
   ShipmentPlannerForm,
   TrackingLog,
 } from "../types/logistics.types";
+import { apiGet } from "../services/api";
 import type { AppPage } from "../types/app.types";
 
 interface LogisticsProps {
@@ -85,7 +86,7 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
   const routeOutputRef = useRef<HTMLDivElement | null>(null);
   const selectedShipmentIdRef = useRef<number | null>(null);
 
-  const [drivers, setDrivers] = useState<{ id: number; name: string }[]>([]);
+  const [drivers, setDrivers] = useState<{ id: number; name: string; cost_per_km?: number }[]>([]);
   const [logisticsOrderId, setLogisticsOrderId] = useState<number | undefined>();
 
   const selectedShipment = shipments.find((shipment) => shipment.id === selectedShipmentId) ?? null;
@@ -108,7 +109,7 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
           loadType: "STANDARD",
         }));
         if (payload.logisticsOrderId) {
-            setLogisticsOrderId(payload.logisticsOrderId);
+          setLogisticsOrderId(payload.logisticsOrderId);
         }
         sessionStorage.removeItem("pendingLogisticsOrder");
       } catch (e) {
@@ -116,9 +117,8 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
       }
     }
 
-    // Fetch drivers for dropdown
-    fetch("http://127.0.0.1:8000/api/drivers")
-      .then(res => res.json())
+    // Fetch drivers with detailed properties like cost_per_km
+    apiGet<{ id: number, name: string, cost_per_km?: number }[]>("/api/drivers/list")
       .then(data => setDrivers(data))
       .catch(console.error);
 
@@ -294,8 +294,8 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
       return;
     }
     if (!plannerForm.productName || !plannerForm.quantity) {
-        setPlanError("Please provide product name and quantity for the schedule request.");
-        return;
+      setPlanError("Please provide product name and quantity for the schedule request.");
+      return;
     }
 
     setIsCreating(true);
@@ -318,19 +318,19 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
       // Create Driver Schedule Request
       const driver = drivers.find(d => d.id.toString() === plannerForm.driverId);
       if (driver) {
-          await logisticsService.createSchedule({
-              origin: plannerForm.origin.trim(),
-              destination: plannerForm.destination.trim(),
-              load_type: plannerForm.loadType,
-              distance_km: routePlan?.distance_km,
-              eta_hours: routePlan?.eta_hours,
-              driver_id: driver.id,
-              product_name: plannerForm.productName,
-              quantity: parseInt(plannerForm.quantity),
-              carrier_type: plannerForm.loadType,
-              logistics_order_id: logisticsOrderId,
-              shipment_id: shipment.id
-          });
+        await logisticsService.createSchedule({
+          origin: plannerForm.origin.trim(),
+          destination: plannerForm.destination.trim(),
+          load_type: plannerForm.loadType,
+          distance_km: routePlan?.distance_km,
+          eta_hours: routePlan?.eta_hours,
+          driver_id: driver.id,
+          product_name: plannerForm.productName,
+          quantity: parseInt(plannerForm.quantity),
+          carrier_type: plannerForm.loadType,
+          logistics_order_id: logisticsOrderId,
+          shipment_id: shipment.id
+        });
       }
 
       setShipments((current) => [shipment, ...current]);
@@ -414,6 +414,7 @@ export function Logistics({ activePage, onNavigate }: LogisticsProps) {
               isCreating={isCreating}
               canCreate={!!routePlan}
               drivers={drivers}
+              routePlan={routePlan}
             />
             <div ref={routeOutputRef} tabIndex={-1} className="outline-none">
               <RouteInsights plan={routePlan} error={planError} />

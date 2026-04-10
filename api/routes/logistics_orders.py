@@ -50,6 +50,9 @@ class LogisticsOrderWithSupplier(BaseModel):
     supplierName: Optional[str]
     current_location_lat: Optional[float]
     current_location_lon: Optional[float]
+    # Payment tracking
+    payment_status: Optional[str]
+    upi_transaction_id: Optional[str]
     # Supplier details
     supplierEmail: Optional[str]
     supplierMobile: Optional[str]
@@ -97,6 +100,8 @@ def get_logistics_orders(
             "supplierName": order.supplierName,
             "current_location_lat": order.current_location_lat,
             "current_location_lon": order.current_location_lon,
+            "payment_status": getattr(order, "payment_status", None),
+            "upi_transaction_id": getattr(order, "upi_transaction_id", None),
             "supplierEmail": supplier.contact_email if supplier else None,
             "supplierMobile": getattr(supplier, "mobile", None) if supplier and hasattr(supplier, "mobile") else None,
             "supplierCompany": getattr(supplier, "company_name", None) if supplier and hasattr(supplier, "company_name") else None,
@@ -158,6 +163,8 @@ class LogisticsOrderCreate(BaseModel):
     retailer_phone: str = None
     retailer_location: str = None
     driver_id: Optional[int] = None
+    payment_status: Optional[str] = None
+    upi_transaction_id: Optional[str] = None
 
 @router.post("/logistics/orders/create")
 def create_logistics_order(order: LogisticsOrderCreate = Body(...), db: Session = Depends(database.get_db)):
@@ -177,6 +184,8 @@ def create_logistics_order(order: LogisticsOrderCreate = Body(...), db: Session 
         imageUrl=order.imageUrl,
         supplierName=order.supplierName,
         publishedAt=order.publishedAt,
+        payment_status=order.payment_status,
+        upi_transaction_id=order.upi_transaction_id,
     )
     db.add(db_order)
     db.commit()

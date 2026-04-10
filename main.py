@@ -12,11 +12,13 @@ from api.routes import (
     ai_tools,
     auth,
     dashboard,
+    drivers,
     inventory,
     logistics,
     logistics_orders,
     manufacturing,
     orders,
+    payments,
     procurement,
     products,
     published_goods,
@@ -59,6 +61,8 @@ app.include_router(manufacturing.router)
 app.include_router(published_goods.router)
 app.include_router(logistics_orders.router)
 app.include_router(schedules.router)
+app.include_router(payments.router)
+app.include_router(drivers.router)
 
 
 @app.on_event("startup")

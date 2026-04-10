@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import type { AuthRole } from "../services/authService";
 import {
   addToCart,
@@ -180,6 +181,17 @@ export function RetailerDashboard({ user, onLogout }: RetailerDashboardProps) {
   const [retailerLocation, setRetailerLocation] = useState("");
   const [formError, setFormError] = useState("");
 
+  // --- Payment flow state ---
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<"upi" | "cash" | null>(null);
+  const [upiTransactionId, setUpiTransactionId] = useState("");
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [invoice, setInvoice] = useState<any>(null);
+  const [showInvoice, setShowInvoice] = useState(false);
+  const invoiceRef = useRef<HTMLDivElement>(null);
+
+  const UPI_ID = import.meta.env.VITE_UPI_ID || "9028336352@ybl";
+
   useEffect(() => {
     const syncPublishedGoods = () => setPublishedGoods(getPublishedGoods());
     const syncCart = () => setCartItems(getCartItems());
@@ -264,7 +276,7 @@ export function RetailerDashboard({ user, onLogout }: RetailerDashboardProps) {
   };
 
   // Helper to send logistics order to backend
-  async function createLogisticsOrder(item: CartItem) {
+  async function createLogisticsOrder(item: CartItem, pStatus?: string, upiTxnId?: string) {
     const payload = {
       product_name: item.product_name,
       sku: item.sku,
@@ -279,6 +291,8 @@ export function RetailerDashboard({ user, onLogout }: RetailerDashboardProps) {
       retailer_email: user.email,
       retailer_phone: retailerPhone,
       retailer_location: retailerLocation,
+      payment_status: pStatus || "pending",
+      upi_transaction_id: upiTxnId || null,
     };
     try {
       await apiPost("/logistics/orders/create", payload);
@@ -289,18 +303,115 @@ export function RetailerDashboard({ user, onLogout }: RetailerDashboardProps) {
     }
   }
 
+  // Opens the payment method selection modal
   const handlePlaceOrder = async () => {
     if (!cartItems.length) return;
-    // Optimistically update UI
-    clearCart();
-    setCartItems([]);
-    setSelectedProduct(null);
-    setOrderMessage("Order placed successfully for the selected retailer items.");
+    setShowPaymentModal(true);
+    setPaymentMethod(null);
+    setUpiTransactionId("");
+    setPaymentProcessing(false);
+  };
+
+  // Generate UPI payment deep link
+  const getUpiPaymentString = () => {
+    const amount = (cartTotal * 1.04).toFixed(2);
+    const name = "SupplyCentral";
+    return `upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR&tn=${encodeURIComponent("Order Payment")}`;
+  };
+
+  // Confirm payment and create invoice
+  const confirmPayment = async () => {
+    if (paymentMethod === "upi" && !upiTransactionId.trim()) {
+      setFormError("Please enter the UPI Transaction ID to confirm.");
+      return;
+    }
+    setPaymentProcessing(true);
+    setFormError("");
+
+    try {
+      const paymentPayload = {
+        payment_method: paymentMethod,
+        upi_transaction_id: paymentMethod === "upi" ? upiTransactionId.trim() : null,
+        retailer_name: user.name,
+        retailer_email: user.email,
+        retailer_phone: retailerPhone,
+        retailer_location: retailerLocation,
+        items: cartItems.map((item) => ({
+          product_name: item.product_name,
+          sku: item.sku,
+          quantity: item.quantity,
+          unit_price: getPriceForQuantity(item, item.quantity),
+          category: item.category,
+        })),
+        subtotal: cartTotal,
+        freight: cartTotal * 0.04,
+        grand_total: cartTotal * 1.04,
+      };
+
+      const invoiceData = await apiPost<any, any>("/payments/create-order", paymentPayload);
+      setInvoice(invoiceData);
+
+      // Create logistics orders (fire and forget)
+      const pStatus = paymentMethod === "upi" ? "paid" : "pending_cash";
+      const txnId = paymentMethod === "upi" ? upiTransactionId.trim() : undefined;
+      Promise.all(cartItems.map((item) => createLogisticsOrder(item, pStatus, txnId))).catch(() => {});
+
+      clearCart();
+      setCartItems([]);
+      setSelectedProduct(null);
+      setShowPaymentModal(false);
+      setShowInvoice(true);
+      setOrderMessage("");
+    } catch (err) {
+      console.error("Payment failed:", err);
+      setFormError("Payment processing failed. Please try again.");
+    } finally {
+      setPaymentProcessing(false);
+    }
+  };
+
+  const closeInvoice = () => {
+    setShowInvoice(false);
+    setInvoice(null);
     setActiveView("browse");
-    // Send each cart item as a logistics order (fire and forget)
-    Promise.all(cartItems.map(createLogisticsOrder)).catch(() => {
-      setOrderMessage("Order placed, but some items may not have been processed. Please check your orders.");
-    });
+    setOrderMessage("Order placed successfully! Invoice has been generated.");
+  };
+
+  const printInvoice = () => {
+    const content = invoiceRef.current;
+    if (!content) return;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Invoice</title>
+          <style>
+            body { font-family: 'Inter', 'Segoe UI', sans-serif; padding: 40px; color: #1e293b; }
+            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+            th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+            th { background: #f1f5f9; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .header h1 { font-size: 28px; color: #1c39bb; margin: 0; }
+            .header p { color: #64748b; margin: 4px 0; }
+            .total-row td { font-weight: 700; font-size: 16px; border-top: 2px solid #1c39bb; }
+            .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+            .badge-upi { background: #dcfce7; color: #16a34a; }
+            .badge-cash { background: #fef3c7; color: #d97706; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+            .info-block p { margin: 2px 0; }
+            .info-block .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; }
+            .info-block .value { font-size: 14px; font-weight: 600; color: #1e293b; }
+            .divider { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+            @media print { body { padding: 20px; } }
+          </style>
+        </head>
+        <body>${content.innerHTML}</body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   };
 
   const browseView = (
@@ -950,6 +1061,357 @@ export function RetailerDashboard({ user, onLogout }: RetailerDashboardProps) {
           </button>
         </div>
       </nav>
+
+      {/* ===== Payment Method Modal ===== */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-[2rem] bg-white p-6 shadow-[0_32px_80px_rgba(28,57,187,0.18)] animate-[fadeInUp_0.3s_ease-out]">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Checkout</p>
+                <h2 className="text-2xl font-semibold text-slate-950">Choose Payment Method</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowPaymentModal(false); setPaymentMethod(null); setFormError(""); }}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {/* Grand Total Display */}
+            <div className="mb-6 rounded-2xl bg-gradient-to-r from-[#1c39bb] to-[#4b5fd1] px-5 py-4 text-white">
+              <p className="text-sm font-medium text-white/75">Amount to Pay</p>
+              <p className="text-3xl font-bold mt-1">{formatPrice(cartTotal * 1.04)}</p>
+              <p className="text-xs text-white/60 mt-1">Includes {formatPrice(cartTotal * 0.04)} freight</p>
+            </div>
+
+            {/* Payment Method Selection */}
+            {!paymentMethod && (
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => { setPaymentMethod("upi"); setFormError(""); }}
+                  className="group relative overflow-hidden rounded-2xl border-2 border-slate-200 bg-white p-5 text-left transition-all hover:border-[#1c39bb] hover:shadow-[0_12px_30px_rgba(28,57,187,0.12)]"
+                >
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#eef2ff] to-[#dde5ff] text-[#1c39bb] mb-4">
+                    <span className="material-symbols-outlined text-2xl">qr_code_2</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-950">UPI Payment</h3>
+                  <p className="mt-1 text-sm text-slate-500">Pay via UPI QR code</p>
+                  <div className="mt-3 flex items-center gap-1 text-xs font-semibold text-[#1c39bb] opacity-0 transition group-hover:opacity-100">
+                    <span>Select</span>
+                    <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setPaymentMethod("cash"); setFormError(""); }}
+                  className="group relative overflow-hidden rounded-2xl border-2 border-slate-200 bg-white p-5 text-left transition-all hover:border-[#d97706] hover:shadow-[0_12px_30px_rgba(217,119,6,0.12)]"
+                >
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#fef3c7] to-[#fde68a] text-[#d97706] mb-4">
+                    <span className="material-symbols-outlined text-2xl">payments</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-950">Cash on Delivery</h3>
+                  <p className="mt-1 text-sm text-slate-500">Pay when delivered</p>
+                  <div className="mt-3 flex items-center gap-1 text-xs font-semibold text-[#d97706] opacity-0 transition group-hover:opacity-100">
+                    <span>Select</span>
+                    <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {/* UPI QR Code Section */}
+            {paymentMethod === "upi" && (
+              <div className="space-y-5">
+                <button
+                  type="button"
+                  onClick={() => { setPaymentMethod(null); setFormError(""); }}
+                  className="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-slate-700 transition"
+                >
+                  <span className="material-symbols-outlined text-base">arrow_back</span>
+                  Change method
+                </button>
+
+                <div className="flex flex-col items-center">
+                  <div className="rounded-2xl border-2 border-dashed border-[#dde5ff] bg-white p-5">
+                    <QRCodeSVG
+                      value={getUpiPaymentString()}
+                      size={220}
+                      level="H"
+                      includeMargin
+                      bgColor="#ffffff"
+                      fgColor="#1c39bb"
+                    />
+                  </div>
+                  <p className="mt-3 text-sm font-semibold text-slate-900">Scan to Pay</p>
+                  <p className="text-xs text-slate-500 mt-1">UPI ID: <span className="font-mono font-semibold text-[#1c39bb]">{UPI_ID}</span></p>
+                  <p className="text-xs text-slate-400 mt-1">Amount: {formatPrice(cartTotal * 1.04)}</p>
+                </div>
+
+                <div className="rounded-2xl bg-[#f0fdf4] border border-emerald-200 px-4 py-3">
+                  <div className="flex items-start gap-2">
+                    <span className="material-symbols-outlined text-emerald-500 text-base mt-0.5">info</span>
+                    <p className="text-xs text-emerald-700">Scan the QR code using any UPI app (Google Pay, PhonePe, Paytm, etc.) and enter the transaction ID below after successful payment.</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-2">
+                    UTR / Transaction ID <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={upiTransactionId}
+                    onChange={(e) => setUpiTransactionId(e.target.value)}
+                    placeholder="Enter 12-digit UTR number"
+                    className="w-full rounded-2xl border border-[#d6dbf7] bg-[#f8f9ff] px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-[#1c39bb] focus:ring-2 focus:ring-[#1c39bb]/15 font-mono"
+                  />
+                </div>
+
+                {formError && <div className="text-red-500 text-xs font-semibold">{formError}</div>}
+
+                <button
+                  type="button"
+                  onClick={confirmPayment}
+                  disabled={paymentProcessing}
+                  className="w-full rounded-2xl bg-gradient-to-r from-[#1c39bb] to-[#4b5fd1] px-4 py-4 text-base font-semibold text-white shadow-[0_12px_30px_rgba(28,57,187,0.25)] transition hover:shadow-[0_16px_40px_rgba(28,57,187,0.35)] disabled:opacity-50"
+                >
+                  {paymentProcessing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                      Processing...
+                    </span>
+                  ) : (
+                    "Confirm UPI Payment"
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* Cash on Delivery Section */}
+            {paymentMethod === "cash" && (
+              <div className="space-y-5">
+                <button
+                  type="button"
+                  onClick={() => { setPaymentMethod(null); setFormError(""); }}
+                  className="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-slate-700 transition"
+                >
+                  <span className="material-symbols-outlined text-base">arrow_back</span>
+                  Change method
+                </button>
+
+                <div className="rounded-2xl bg-[#fffbeb] border border-amber-200 p-5 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#fde68a] to-[#f59e0b] mx-auto mb-4">
+                    <span className="material-symbols-outlined text-3xl text-white">account_balance_wallet</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-950">Cash on Delivery</h3>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Pay <span className="font-bold text-[#d97706]">{formatPrice(cartTotal * 1.04)}</span> in cash when the order is delivered to your location.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-[#fef3c7] border border-amber-200 px-4 py-3">
+                  <div className="flex items-start gap-2">
+                    <span className="material-symbols-outlined text-amber-600 text-base mt-0.5">warning</span>
+                    <p className="text-xs text-amber-800">Please keep the exact amount ready at the time of delivery. Our delivery partner will collect the payment and provide a receipt.</p>
+                  </div>
+                </div>
+
+                {formError && <div className="text-red-500 text-xs font-semibold">{formError}</div>}
+
+                <button
+                  type="button"
+                  onClick={confirmPayment}
+                  disabled={paymentProcessing}
+                  className="w-full rounded-2xl bg-gradient-to-r from-[#d97706] to-[#f59e0b] px-4 py-4 text-base font-semibold text-white shadow-[0_12px_30px_rgba(217,119,6,0.25)] transition hover:shadow-[0_16px_40px_rgba(217,119,6,0.35)] disabled:opacity-50"
+                >
+                  {paymentProcessing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                      Processing...
+                    </span>
+                  ) : (
+                    "Place Order (Cash on Delivery)"
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== Invoice / Bill Modal ===== */}
+      {showInvoice && invoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-[2rem] bg-white shadow-[0_32px_80px_rgba(28,57,187,0.18)] animate-[fadeInUp_0.3s_ease-out]">
+            {/* Invoice Actions Bar */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                  <span className="material-symbols-outlined">check_circle</span>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-emerald-700">
+                    {invoice.payment_method === "upi" ? "Payment Successful" : "Order Placed"}
+                  </p>
+                  <p className="text-xs text-slate-500">{invoice.invoice_number}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={printInvoice}
+                  className="flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  <span className="material-symbols-outlined text-base">print</span>
+                  Print
+                </button>
+                <button
+                  type="button"
+                  onClick={closeInvoice}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Invoice Content */}
+            <div ref={invoiceRef} className="p-6">
+              {/* Invoice Header */}
+              <div className="header" style={{ textAlign: "center", marginBottom: 24 }}>
+                <h1 style={{ fontSize: 28, color: "#1c39bb", margin: 0, fontWeight: 700 }}>SupplyCentral</h1>
+                <p style={{ color: "#64748b", margin: "4px 0", fontSize: 14 }}>Supply Chain Management Platform</p>
+                <p style={{ color: "#94a3b8", margin: "2px 0", fontSize: 12 }}>--- TAX INVOICE ---</p>
+              </div>
+
+              {/* Invoice Info Grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, margin: "16px 0" }}>
+                <div>
+                  <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "#94a3b8", margin: "2px 0" }}>Invoice No.</p>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", margin: "2px 0" }}>{invoice.invoice_number}</p>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "#94a3b8", margin: "2px 0" }}>Date</p>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", margin: "2px 0" }}>
+                    {new Date(invoice.order_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+                <div>
+                  <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "#94a3b8", margin: "2px 0" }}>Bill To</p>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", margin: "2px 0" }}>{invoice.retailer_name}</p>
+                  <p style={{ fontSize: 13, color: "#64748b", margin: "2px 0" }}>{invoice.retailer_email}</p>
+                  <p style={{ fontSize: 13, color: "#64748b", margin: "2px 0" }}>{invoice.retailer_phone}</p>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "#94a3b8", margin: "2px 0" }}>Payment</p>
+                  <p style={{ margin: "4px 0" }}>
+                    <span
+                      className={`badge ${invoice.payment_method === "upi" ? "badge-upi" : "badge-cash"}`}
+                      style={{
+                        display: "inline-block",
+                        padding: "4px 12px",
+                        borderRadius: 20,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        background: invoice.payment_method === "upi" ? "#dcfce7" : "#fef3c7",
+                        color: invoice.payment_method === "upi" ? "#16a34a" : "#d97706",
+                      }}
+                    >
+                      {invoice.payment_method === "upi" ? "UPI Paid" : "Cash on Delivery"}
+                    </span>
+                  </p>
+                  {invoice.upi_transaction_id && (
+                    <p style={{ fontSize: 12, color: "#64748b", margin: "4px 0", fontFamily: "monospace" }}>
+                      UTR: {invoice.upi_transaction_id}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <hr style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "16px 0" }} />
+
+              {/* Items Table */}
+              <table style={{ width: "100%", borderCollapse: "collapse", margin: "16px 0" }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: "10px 14px", textAlign: "left", borderBottom: "2px solid #e2e8f0", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#475569", background: "#f8fafc" }}>#</th>
+                    <th style={{ padding: "10px 14px", textAlign: "left", borderBottom: "2px solid #e2e8f0", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#475569", background: "#f8fafc" }}>Product</th>
+                    <th style={{ padding: "10px 14px", textAlign: "left", borderBottom: "2px solid #e2e8f0", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#475569", background: "#f8fafc" }}>SKU</th>
+                    <th style={{ padding: "10px 14px", textAlign: "right", borderBottom: "2px solid #e2e8f0", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#475569", background: "#f8fafc" }}>Qty</th>
+                    <th style={{ padding: "10px 14px", textAlign: "right", borderBottom: "2px solid #e2e8f0", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#475569", background: "#f8fafc" }}>Rate</th>
+                    <th style={{ padding: "10px 14px", textAlign: "right", borderBottom: "2px solid #e2e8f0", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#475569", background: "#f8fafc" }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoice.items.map((item: any, idx: number) => (
+                    <tr key={idx}>
+                      <td style={{ padding: "10px 14px", borderBottom: "1px solid #f1f5f9", fontSize: 13, color: "#64748b" }}>{idx + 1}</td>
+                      <td style={{ padding: "10px 14px", borderBottom: "1px solid #f1f5f9", fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{item.product_name}</td>
+                      <td style={{ padding: "10px 14px", borderBottom: "1px solid #f1f5f9", fontSize: 12, color: "#64748b", fontFamily: "monospace" }}>{item.sku}</td>
+                      <td style={{ padding: "10px 14px", borderBottom: "1px solid #f1f5f9", fontSize: 13, color: "#1e293b", textAlign: "right" }}>{item.quantity}</td>
+                      <td style={{ padding: "10px 14px", borderBottom: "1px solid #f1f5f9", fontSize: 13, color: "#1e293b", textAlign: "right" }}>{formatPrice(item.unit_price)}</td>
+                      <td style={{ padding: "10px 14px", borderBottom: "1px solid #f1f5f9", fontSize: 13, fontWeight: 600, color: "#1e293b", textAlign: "right" }}>{formatPrice(item.line_total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={5} style={{ padding: "10px 14px", textAlign: "right", fontSize: 13, color: "#64748b" }}>Subtotal</td>
+                    <td style={{ padding: "10px 14px", textAlign: "right", fontSize: 14, fontWeight: 600, color: "#1e293b" }}>{formatPrice(invoice.subtotal)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={5} style={{ padding: "10px 14px", textAlign: "right", fontSize: 13, color: "#64748b" }}>Freight (4%)</td>
+                    <td style={{ padding: "10px 14px", textAlign: "right", fontSize: 14, fontWeight: 600, color: "#1e293b" }}>{formatPrice(invoice.freight)}</td>
+                  </tr>
+                  <tr className="total-row">
+                    <td colSpan={5} style={{ padding: "14px", textAlign: "right", fontSize: 16, fontWeight: 700, color: "#1e293b", borderTop: "2px solid #1c39bb" }}>Grand Total</td>
+                    <td style={{ padding: "14px", textAlign: "right", fontSize: 18, fontWeight: 700, color: "#1c39bb", borderTop: "2px solid #1c39bb" }}>{formatPrice(invoice.grand_total)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+
+              {/* Delivery Details */}
+              <div style={{ borderRadius: 16, background: "#f8fafc", padding: 16, marginTop: 16 }}>
+                <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: "#94a3b8", margin: "0 0 6px" }}>Delivery Address</p>
+                <p style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", margin: 0 }}>{invoice.retailer_location}</p>
+              </div>
+
+              {/* Footer */}
+              <div style={{ textAlign: "center", marginTop: 24, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
+                <p style={{ fontSize: 12, color: "#94a3b8", margin: "2px 0" }}>Thank you for your business!</p>
+                <p style={{ fontSize: 11, color: "#cbd5e1", margin: "2px 0" }}>SupplyCentral &bull; AI-Powered Supply Chain Management</p>
+              </div>
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={printInvoice}
+                className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-base">download</span>
+                  Print Invoice
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={closeInvoice}
+                className="rounded-2xl bg-[#1c39bb] px-5 py-3 text-sm font-semibold text-white hover:bg-[#17319d] transition"
+              >
+                Continue Shopping
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

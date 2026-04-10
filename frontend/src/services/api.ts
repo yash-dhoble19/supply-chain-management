@@ -11,11 +11,17 @@ export class ApiError extends Error {
 }
 
 export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const token = localStorage.getItem("scm-token");
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "GET",
-    headers: {
-      Accept: "application/json",
-    },
+    headers,
     signal,
   });
 
@@ -32,12 +38,18 @@ export async function apiPost<TResponse, TPayload>(
   payload: TPayload,
   signal?: AbortSignal,
 ): Promise<TResponse> {
+  const token = localStorage.getItem("scm-token");
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(payload),
     signal,
   });
@@ -55,12 +67,18 @@ export async function apiPut<TResponse, TPayload>(
   payload: TPayload,
   signal?: AbortSignal,
 ): Promise<TResponse> {
+  const token = localStorage.getItem("scm-token");
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "PUT",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(payload),
     signal,
   });
@@ -74,11 +92,17 @@ export async function apiPut<TResponse, TPayload>(
 }
 
 export async function apiDelete<TResponse>(path: string, signal?: AbortSignal): Promise<TResponse> {
+  const token = localStorage.getItem("scm-token");
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "DELETE",
-    headers: {
-      Accept: "application/json",
-    },
+    headers,
     signal,
   });
 
@@ -91,11 +115,17 @@ export async function apiDelete<TResponse>(path: string, signal?: AbortSignal): 
 }
 
 export async function apiDownload(path: string, signal?: AbortSignal): Promise<{ blob: Blob; filename?: string }> {
+  const token = localStorage.getItem("scm-token");
+  const headers: Record<string, string> = {
+    Accept: "application/pdf,application/octet-stream",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "GET",
-    headers: {
-      Accept: "application/pdf,application/octet-stream",
-    },
+    headers,
     signal,
   });
 

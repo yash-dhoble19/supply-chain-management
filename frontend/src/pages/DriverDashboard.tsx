@@ -1,8 +1,17 @@
 
 import React, { useState, useEffect } from "react";
 import { logisticsService } from "../services/logisticsService";
+import { apiGet, apiPost } from "../services/api";
 
 type Tab = "dashboard" | "available" | "myjobs" | "profile";
+
+interface DriverProfileData {
+  driving_license: string;
+  vehicle_make: string;
+  vehicle_model: string;
+  license_plate: string;
+  cost_per_km: number | "";
+}
 
 const SIDEBAR_ITEMS = [
   { key: "dashboard", label: "Dashboard", icon: "dashboard" },
@@ -11,8 +20,7 @@ const SIDEBAR_ITEMS = [
   { key: "profile", label: "Profile", icon: "person" },
 ];
 
-// Dummy user for demo; replace with real auth
-const DEMO_USER = { name: "Driver John", email: "driver@example.com" };
+// We will use the 'user' prop instead of the demo user
 
 interface DriverDashboardProps {
   user: {
@@ -125,8 +133,51 @@ export function DriverDashboard({ user, onLogout }: DriverDashboardProps) {
   const [gpsError, setGpsError] = useState<string | null>(null);
 
 
-  // Demo driver id (replace with real auth)
-  const DRIVER_ID = 1;
+  const DRIVER_ID = user.id;
+  const [profileData, setProfileData] = useState<DriverProfileData>({
+    driving_license: "",
+    vehicle_make: "",
+    vehicle_model: "",
+    license_plate: "",
+    cost_per_km: "",
+  });
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+
+  // Fetch driver profile when switching to profile tab
+  useEffect(() => {
+    if (tab === "profile") {
+      apiGet<any>("/api/drivers/profile")
+          .then((data) => {
+             setProfileData({
+                driving_license: data.driving_license || "",
+                vehicle_make: data.vehicle_make || "",
+                vehicle_model: data.vehicle_model || "",
+                license_plate: data.license_plate || "",
+                cost_per_km: data.cost_per_km || "",
+             });
+          })
+          .catch(err => console.error("Failed to load profile", err));
+    }
+  }, [tab]);
+
+  const handleProfileSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileSaving(true);
+    setError(null);
+    try {
+       const payload = {
+           ...profileData,
+           cost_per_km: profileData.cost_per_km === "" ? null : profileData.cost_per_km
+       };
+       await apiPost("/api/drivers/profile", payload);
+       setIsEditingProfile(false);
+    } catch (e: any) {
+       setError(e.message || "Failed to save profile");
+    } finally {
+       setProfileSaving(false);
+    }
+  };
 
   // Fetch all jobs and split into available/my jobs
   const fetchJobs = React.useCallback(async (signal?: AbortSignal) => {
@@ -278,7 +329,7 @@ export function DriverDashboard({ user, onLogout }: DriverDashboardProps) {
       <main className="flex-1 p-10">
         {tab === "dashboard" && (
           <div>
-            <h1 className="text-2xl font-bold mb-6">Welcome back, {DEMO_USER.name}</h1>
+            <h1 className="text-2xl font-bold mb-6">Welcome back, {user.name}</h1>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
               <div className="rounded-2xl bg-white p-6 shadow">
                 <div className="text-sm text-slate-500 font-semibold">Jobs in your area</div>
@@ -508,11 +559,138 @@ export function DriverDashboard({ user, onLogout }: DriverDashboardProps) {
 
         {tab === "profile" && (
           <div>
-            <h2 className="text-xl font-bold mb-4">Profile</h2>
-            <div className="bg-white rounded-xl p-6 shadow">
-              <div className="font-semibold">{DEMO_USER.name}</div>
-              <div className="text-slate-500">{DEMO_USER.email}</div>
-              <div className="mt-4 text-xs text-slate-400">Role: Driver</div>
+            <h2 className="text-xl font-bold mb-4">Profile & Settings</h2>
+            <div className="bg-white rounded-xl p-6 shadow mb-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="h-16 w-16 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-2xl font-bold uppercase">
+                  {user.name.charAt(0)}
+                </div>
+                <div>
+                  <div className="font-bold text-xl">{user.name}</div>
+                  <div className="text-slate-500">{user.email}</div>
+                  <div className="mt-1 text-xs font-semibold bg-blue-100 text-blue-800 px-2 py-0.5 rounded inline-block">Role: Driver</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow overflow-hidden">
+              <div className="p-6 border-b flex justify-between items-center">
+                <h3 className="font-bold text-lg">Vehicle & License Documentation</h3>
+                {!isEditingProfile && (
+                  <button 
+                    onClick={() => setIsEditingProfile(true)}
+                    className="text-sm font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-sm">edit</span> Edit
+                  </button>
+                )}
+              </div>
+              
+              <div className="p-6">
+                {error && tab === "profile" && (
+                  <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm rounded-xl">
+                    {error}
+                  </div>
+                )}
+                {isEditingProfile ? (
+                  <form onSubmit={handleProfileSave} className="space-y-4 max-w-xl">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Driving License</label>
+                        <input
+                          type="text"
+                          value={profileData.driving_license}
+                          onChange={(e) => setProfileData(p => ({ ...p, driving_license: e.target.value }))}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                          placeholder="e.g. DL-142011XXXXXXXX"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Vehicle Match</label>
+                        <input
+                          type="text"
+                          value={profileData.vehicle_make}
+                          onChange={(e) => setProfileData(p => ({ ...p, vehicle_make: e.target.value }))}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                          placeholder="e.g. Tata, Mahindra"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Vehicle Model</label>
+                        <input
+                          type="text"
+                          value={profileData.vehicle_model}
+                          onChange={(e) => setProfileData(p => ({ ...p, vehicle_model: e.target.value }))}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                          placeholder="e.g. Ace Gold, Bolero Pik-Up"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">License Plate</label>
+                        <input
+                          type="text"
+                          value={profileData.license_plate}
+                          onChange={(e) => setProfileData(p => ({ ...p, license_plate: e.target.value }))}
+                          className="w-full px-4 py-2 border rounded-lg text-transform uppercase focus:ring-2 focus:ring-blue-500 outline-none"
+                          placeholder="e.g. MH 12 AB 1234"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Standard Rate / km ($)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={profileData.cost_per_km}
+                          onChange={(e) => setProfileData(p => ({ ...p, cost_per_km: e.target.value === "" ? "" : parseFloat(e.target.value) }))}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                          placeholder="e.g. 1.25"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-3 pt-4 border-t">
+                      <button 
+                        type="button" 
+                        onClick={() => setIsEditingProfile(false)}
+                        className="px-4 py-2 rounded-lg font-medium text-slate-600 hover:bg-slate-100"
+                        disabled={profileSaving}
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        type="submit" 
+                        className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-sm"
+                        disabled={profileSaving}
+                      >
+                        {profileSaving ? "Saving..." : "Save Profile"}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-6 gap-x-4">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Driving License</div>
+                      <div className="font-medium text-slate-900">{profileData.driving_license || <span className="text-slate-400 italic">Not set</span>}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Vehicle Make</div>
+                      <div className="font-medium text-slate-900">{profileData.vehicle_make || <span className="text-slate-400 italic">Not set</span>}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Vehicle Model</div>
+                      <div className="font-medium text-slate-900">{profileData.vehicle_model || <span className="text-slate-400 italic">Not set</span>}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">License Plate</div>
+                      <div className="font-medium text-slate-900 font-mono bg-slate-100 px-2 py-0.5 rounded inline-block">{profileData.license_plate || "UNREGISTERED"}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Rate (Per KM)</div>
+                      <div className="font-medium text-emerald-600 font-bold">{profileData.cost_per_km ? `$${profileData.cost_per_km}/km` : <span className="text-slate-400 italic">Not set</span>}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

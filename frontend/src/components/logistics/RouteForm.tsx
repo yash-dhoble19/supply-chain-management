@@ -1,6 +1,6 @@
 import type { ChangeEvent } from "react";
 import { LOGISTICS_LOAD_TYPES } from "../../types/logistics.types";
-import type { ShipmentPlannerForm } from "../../types/logistics.types";
+import type { ShipmentPlannerForm, LogisticsRoutePlan } from "../../types/logistics.types";
 
 interface RouteFormProps {
   form: ShipmentPlannerForm;
@@ -10,7 +10,8 @@ interface RouteFormProps {
   isPlanning: boolean;
   isCreating: boolean;
   canCreate: boolean;
-  drivers: { id: number; name: string }[];
+  drivers: { id: number; name: string; cost_per_km?: number }[];
+  routePlan?: LogisticsRoutePlan | null;
 }
 
 const inputClassName =
@@ -25,6 +26,7 @@ export function RouteForm({
   isCreating,
   canCreate,
   drivers = [],
+  routePlan,
 }: RouteFormProps) {
   const handleInputChange =
     (field: keyof ShipmentPlannerForm) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -75,7 +77,7 @@ export function RouteForm({
             ))}
           </select>
         </label>
-        
+
         <label className="block">
           <span className="mb-2 block text-sm font-semibold text-slate-800">Product Name</span>
           <input
@@ -97,14 +99,21 @@ export function RouteForm({
             min="1"
           />
         </label>
-        
-        <label className="block">
-          <span className="mb-2 block text-sm font-semibold text-slate-800">Assign Driver</span>
+
+        <label className="block sm:col-span-2 xl:col-span-1">
+          <span className="mb-2 flex justify-between tracking-tight text-sm font-semibold text-slate-800">
+            <span>Assign Driver</span>
+            {form.driverId && drivers.find(d => d.id.toString() === form.driverId)?.cost_per_km && routePlan?.distance_km && (
+              <span className="text-emerald-700 font-bold bg-emerald-50 px-2 rounded">
+                Estimated Cost: ${(drivers.find(d => d.id.toString() === form.driverId)!.cost_per_km! * routePlan.distance_km).toFixed(2)}
+              </span>
+            )}
+          </span>
           <select value={form.driverId || ""} onChange={handleInputChange("driverId")} className={inputClassName}>
             <option value="" disabled>Select a driver</option>
             {drivers.map((driver) => (
               <option key={driver.id} value={driver.id.toString()}>
-                {driver.name}
+                {driver.name} {driver.cost_per_km ? ` - $${driver.cost_per_km}/km` : ""}
               </option>
             ))}
           </select>
