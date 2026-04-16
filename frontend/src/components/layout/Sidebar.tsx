@@ -71,7 +71,7 @@ export function Sidebar({ isOpen, onClose, activePage, onNavigate }: SidebarProp
           ))}
         </nav>
 
-        <div className="border-t border-slate-800/70 p-6">
+        <div className="border-t border-slate-800/70 p-6 flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-slate-700 bg-slate-800 text-sm font-semibold text-slate-100">
               MC
@@ -81,6 +81,17 @@ export function Sidebar({ isOpen, onClose, activePage, onNavigate }: SidebarProp
               <p className="truncate text-xs text-slate-500">Plant Operations</p>
             </div>
           </div>
+          <button
+            onClick={() => {
+              localStorage.removeItem("scm-token");
+              localStorage.removeItem("scm-user");
+              window.location.href = "/loginpage";
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-red-500/10 px-4 py-2 text-sm font-bold text-red-500 transition hover:bg-red-500/20"
+          >
+            <span className="material-symbols-outlined text-lg">logout</span>
+            Logout
+          </button>
         </div>
       </aside>
     </>
